@@ -1,0 +1,107 @@
+name: Deploy ML Pipeline to Snowflake
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'development'
+      - 'release/**'
+      - 'main'
+  pull_request:
+    branches:
+      - 'development'
+      - 'main'
+
+jobs:
+  test_and_deploy:
+    runs-on: ubuntu-latest
+    environment: 
+      name: ${{ (github.ref == 'refs/heads/main' && 'production') || 'non-production' }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install snowflake-cli
+
+      - name: Determine Environment
+        id: env_selector
+        run: |
+          if [[ $GITHUB_REF_NAME == feature/* ]]; then
+            echo "ENV_NAME=DEV" >> $GITHUB_ENV
+            echo "SNOWFLAKE_DB=DEV_ML_DB" >> $GITHUB_ENV
+            echo "SNOWFLAKE_WH=DEV_WH_XS" >> $GITHUB_ENV
+            echo "SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_DEV_ROLE }}" >> $GITHUB_ENV
+          elif [[ $GITHUB_REF_NAME == 'development' ]]; then
+            echo "ENV_NAME=SIT" >> $GITHUB_ENV
+            echo "SNOWFLAKE_DB=SIT_ML_DB" >> $GITHUB_ENV
+            echo "SNOWFLAKE_WH=SIT_WH_S" >> $GITHUB_ENV
+            echo "SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_SIT_ROLE }}" >> $GITHUB_ENV
+          elif [[ $GITHUB_REF_NAME == release/* ]]; then
+            echo "ENV_NAME=UAT" >> $GITHUB_ENV
+            echo "SNOWFLAKE_DB=UAT_ML_DB" >> $GITHUB_ENV
+            echo "SNOWFLAKE_WH=UAT_WH_M" >> $GITHUB_ENV
+            echo "SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_UAT_ROLE }}" >> $GITHUB_ENV
+          elif [[ $GITHUB_REF_NAME == 'main' ]]; then
+            echo "ENV_NAME=PRD" >> $GITHUB_ENV
+            echo "SNOWFLAKE_DB=PRD_ML_DB" >> $GITHUB_ENV
+            echo "SNOWFLAKE_WH=PRD_WH_L" >> $GITHUB_ENV
+            echo "SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_PRD_ROLE }}" >> $GITHUB_ENV
+          fi
+
+      - name: Configure Snow CLI Connection
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          echo "$SNOWFLAKE_PRIVATE_KEY" > deploy_key.p8
+          chmod 600 deploy_key.p8
+          
+          snow connection add ci_connection \
+            --account "$SNOWFLAKE_ACCOUNT" \
+            --user "$SNOWFLAKE_USER" \
+            --private-key-path "deploy_key.p8" \
+            --role "${{ env.SNOWFLAKE_ROLE }}" \
+            --warehouse "${{ env.SNOWFLAKE_WH }}" \
+            --database "${{ env.SNOWFLAKE_DB }}" \
+            --schema "PIPELINES"
+
+      - name: Create Stage via Snow CLI
+        run: |
+          snow sql -q "CREATE STAGE IF NOT EXISTS ML_CODE_STAGE" -c ci_connection
+
+      - name: Upload Code Artifacts via Snow CLI
+        run: |
+          snow stage copy src/ml_logic.py @ML_CODE_STAGE --overwrite -c ci_connection
+
+      - name: Deploy Pipeline Logic
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_ROLE: ${{ env.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ env.SNOWFLAKE_WH }}
+          SNOWFLAKE_DATABASE: ${{ env.SNOWFLAKE_DB }}
+          SNOWFLAKE_SCHEMA: "PIPELINES"
+        run: |
+          python scripts/deploy_pipeline.py ${{ env.ENV_NAME }}
+      
+      - name: Post-Deployment Validation
+        run: |
+          echo "Deployment to ${{ env.ENV_NAME }} completed successfully"
+          echo "Environment: ${{ env.ENV_NAME }}"
+          echo "Database: ${{ env.SNOWFLAKE_DB }}"
+          echo "Warehouse: ${{ env.SNOWFLAKE_WH }}"
+          
+      - name: Cleanup Key
+        if: always()
+        run: rm -f deploy_key.p8

@@ -1,0 +1,11 @@
+# actionlint configuration
+# https://github.com/rhysd/actionlint/blob/main/docs/config.md
+
+self-hosted-runner:
+  # Labels of self-hosted runner
+  labels: []
+
+# Disable specific checks that produce false positives
+# The secrets and env variables are configured in GitHub repo settings
+# and are valid, but the linter can't verify them at analysis time
+

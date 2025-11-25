@@ -1,0 +1,227 @@
+-- ============================================================================
+-- Roles and Security Setup for ML Pipeline
+-- ============================================================================
+-- Description: Creates roles and grants appropriate permissions
+-- Execute as: ACCOUNTADMIN or SECURITYADMIN
+-- ============================================================================
+
+USE ROLE SECURITYADMIN;
+
+-- ============================================================================
+-- 1. CREATE ROLES
+-- ============================================================================
+
+-- ML Developer Role (for DEV environment)
+CREATE ROLE IF NOT EXISTS ML_DEV_ROLE
+    COMMENT = 'Role for ML developers working in DEV environment';
+
+-- ML SIT Role (for integration testing)
+CREATE ROLE IF NOT EXISTS ML_SIT_ROLE
+    COMMENT = 'Role for ML testing in SIT environment';
+
+-- ML UAT Role (for user acceptance testing)
+CREATE ROLE IF NOT EXISTS ML_UAT_ROLE
+    COMMENT = 'Role for ML UAT pre-production validation';
+
+-- ML Production Role (for production deployments)
+CREATE ROLE IF NOT EXISTS ML_PRD_ROLE
+    COMMENT = 'Role for ML production pipeline execution';
+
+-- CI/CD Service Account Role
+CREATE ROLE IF NOT EXISTS ML_CICD_ROLE
+    COMMENT = 'Role for GitHub Actions CI/CD pipeline';
+
+-- ============================================================================
+-- 2. ROLE HIERARCHY
+-- ============================================================================
+
+-- Grant roles to SYSADMIN for management
+GRANT ROLE ML_DEV_ROLE TO ROLE SYSADMIN;
+GRANT ROLE ML_SIT_ROLE TO ROLE SYSADMIN;
+GRANT ROLE ML_UAT_ROLE TO ROLE SYSADMIN;
+GRANT ROLE ML_PRD_ROLE TO ROLE SYSADMIN;
+GRANT ROLE ML_CICD_ROLE TO ROLE SYSADMIN;
+
+-- CI/CD role should have access to all environments for deployment
+GRANT ROLE ML_DEV_ROLE TO ROLE ML_CICD_ROLE;
+GRANT ROLE ML_SIT_ROLE TO ROLE ML_CICD_ROLE;
+GRANT ROLE ML_UAT_ROLE TO ROLE ML_CICD_ROLE;
+GRANT ROLE ML_PRD_ROLE TO ROLE ML_CICD_ROLE;
+
+-- ============================================================================
+-- 3. WAREHOUSE GRANTS - DEV
+-- ============================================================================
+
+USE ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON WAREHOUSE DEV_WH_XS TO ROLE ML_DEV_ROLE;
+GRANT OPERATE ON WAREHOUSE DEV_WH_XS TO ROLE ML_DEV_ROLE;
+GRANT MONITOR ON WAREHOUSE DEV_WH_XS TO ROLE ML_DEV_ROLE;
+
+-- ============================================================================
+-- 4. DATABASE GRANTS - DEV
+-- ============================================================================
+
+-- DEV_RAW_DB (read access)
+GRANT USAGE ON DATABASE DEV_RAW_DB TO ROLE ML_DEV_ROLE;
+GRANT USAGE ON SCHEMA DEV_RAW_DB.PUBLIC TO ROLE ML_DEV_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA DEV_RAW_DB.PUBLIC TO ROLE ML_DEV_ROLE;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA DEV_RAW_DB.PUBLIC TO ROLE ML_DEV_ROLE;
+
+-- DEV_ML_DB (full access for development)
+GRANT ALL ON DATABASE DEV_ML_DB TO ROLE ML_DEV_ROLE;
+GRANT ALL ON SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON SCHEMA DEV_ML_DB.OUTPUT TO ROLE ML_DEV_ROLE;
+
+-- Grant access to all objects
+GRANT ALL ON ALL TABLES IN SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA DEV_ML_DB.OUTPUT TO ROLE ML_DEV_ROLE;
+GRANT ALL ON ALL STAGES IN SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+
+-- Future grants
+GRANT ALL ON FUTURE TABLES IN SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA DEV_ML_DB.OUTPUT TO ROLE ML_DEV_ROLE;
+GRANT ALL ON FUTURE STAGES IN SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+
+-- ============================================================================
+-- 5. WAREHOUSE GRANTS - SIT
+-- ============================================================================
+
+GRANT USAGE ON WAREHOUSE SIT_WH_S TO ROLE ML_SIT_ROLE;
+GRANT OPERATE ON WAREHOUSE SIT_WH_S TO ROLE ML_SIT_ROLE;
+GRANT MONITOR ON WAREHOUSE SIT_WH_S TO ROLE ML_SIT_ROLE;
+
+-- ============================================================================
+-- 6. DATABASE GRANTS - SIT
+-- ============================================================================
+
+-- SIT_RAW_DB (read access)
+GRANT USAGE ON DATABASE SIT_RAW_DB TO ROLE ML_SIT_ROLE;
+GRANT USAGE ON SCHEMA SIT_RAW_DB.PUBLIC TO ROLE ML_SIT_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA SIT_RAW_DB.PUBLIC TO ROLE ML_SIT_ROLE;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA SIT_RAW_DB.PUBLIC TO ROLE ML_SIT_ROLE;
+
+-- SIT_ML_DB (full access)
+GRANT ALL ON DATABASE SIT_ML_DB TO ROLE ML_SIT_ROLE;
+GRANT ALL ON SCHEMA SIT_ML_DB.PIPELINES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON SCHEMA SIT_ML_DB.FEATURES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON SCHEMA SIT_ML_DB.OUTPUT TO ROLE ML_SIT_ROLE;
+
+-- Grant access to all objects
+GRANT ALL ON ALL TABLES IN SCHEMA SIT_ML_DB.PIPELINES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA SIT_ML_DB.FEATURES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA SIT_ML_DB.OUTPUT TO ROLE ML_SIT_ROLE;
+GRANT ALL ON ALL STAGES IN SCHEMA SIT_ML_DB.PIPELINES TO ROLE ML_SIT_ROLE;
+
+-- Future grants
+GRANT ALL ON FUTURE TABLES IN SCHEMA SIT_ML_DB.PIPELINES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA SIT_ML_DB.FEATURES TO ROLE ML_SIT_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA SIT_ML_DB.OUTPUT TO ROLE ML_SIT_ROLE;
+GRANT ALL ON FUTURE STAGES IN SCHEMA SIT_ML_DB.PIPELINES TO ROLE ML_SIT_ROLE;
+
+-- ============================================================================
+-- 7. WAREHOUSE GRANTS - UAT
+-- ============================================================================
+
+GRANT USAGE, OPERATE, MONITOR ON WAREHOUSE UAT_WH_M TO ROLE ML_UAT_ROLE;
+
+-- ============================================================================
+-- 8. DATABASE GRANTS - UAT
+-- ============================================================================
+
+-- UAT_RAW_DB (read access)
+GRANT USAGE ON DATABASE UAT_RAW_DB TO ROLE ML_UAT_ROLE;
+GRANT USAGE ON SCHEMA UAT_RAW_DB.PUBLIC TO ROLE ML_UAT_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA UAT_RAW_DB.PUBLIC TO ROLE ML_UAT_ROLE;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA UAT_RAW_DB.PUBLIC TO ROLE ML_UAT_ROLE;
+
+-- UAT_ML_DB (full access)
+GRANT ALL ON DATABASE UAT_ML_DB TO ROLE ML_UAT_ROLE;
+GRANT ALL ON SCHEMA UAT_ML_DB.PIPELINES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON SCHEMA UAT_ML_DB.FEATURES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON SCHEMA UAT_ML_DB.OUTPUT TO ROLE ML_UAT_ROLE;
+
+-- Grant access to all objects
+GRANT ALL ON ALL TABLES IN SCHEMA UAT_ML_DB.PIPELINES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA UAT_ML_DB.FEATURES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA UAT_ML_DB.OUTPUT TO ROLE ML_UAT_ROLE;
+GRANT ALL ON ALL STAGES IN SCHEMA UAT_ML_DB.PIPELINES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON ALL VIEWS IN SCHEMA UAT_ML_DB.OUTPUT TO ROLE ML_UAT_ROLE;
+
+-- Future grants
+GRANT ALL ON FUTURE TABLES IN SCHEMA UAT_ML_DB.PIPELINES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA UAT_ML_DB.FEATURES TO ROLE ML_UAT_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA UAT_ML_DB.OUTPUT TO ROLE ML_UAT_ROLE;
+GRANT ALL ON FUTURE STAGES IN SCHEMA UAT_ML_DB.PIPELINES TO ROLE ML_UAT_ROLE;
+
+-- ============================================================================
+-- 9. WAREHOUSE GRANTS - PRD
+-- ============================================================================
+
+GRANT USAGE ON WAREHOUSE PRD_WH_L TO ROLE ML_PRD_ROLE;
+GRANT OPERATE ON WAREHOUSE PRD_WH_L TO ROLE ML_PRD_ROLE;
+GRANT MONITOR ON WAREHOUSE PRD_WH_L TO ROLE ML_PRD_ROLE;
+
+-- ============================================================================
+-- 8. DATABASE GRANTS - PRD
+-- ============================================================================
+
+-- PRD_RAW_DB (read-only access)
+GRANT USAGE ON DATABASE PRD_RAW_DB TO ROLE ML_PRD_ROLE;
+GRANT USAGE ON SCHEMA PRD_RAW_DB.PUBLIC TO ROLE ML_PRD_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA PRD_RAW_DB.PUBLIC TO ROLE ML_PRD_ROLE;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA PRD_RAW_DB.PUBLIC TO ROLE ML_PRD_ROLE;
+
+-- PRD_ML_DB (controlled access - pipelines can execute, limited table modifications)
+GRANT USAGE ON DATABASE PRD_ML_DB TO ROLE ML_PRD_ROLE;
+GRANT USAGE ON SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+GRANT USAGE ON SCHEMA PRD_ML_DB.FEATURES TO ROLE ML_PRD_ROLE;
+GRANT USAGE ON SCHEMA PRD_ML_DB.OUTPUT TO ROLE ML_PRD_ROLE;
+
+-- Pipelines schema - full access for DAG deployment
+GRANT ALL ON SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON ALL STAGES IN SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON FUTURE STAGES IN SCHEMA PRD_ML_DB.PIPELINES TO ROLE ML_PRD_ROLE;
+
+-- Features schema - controlled write access
+GRANT CREATE TABLE ON SCHEMA PRD_ML_DB.FEATURES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA PRD_ML_DB.FEATURES TO ROLE ML_PRD_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA PRD_ML_DB.FEATURES TO ROLE ML_PRD_ROLE;
+
+-- Output schema - write access for predictions
+GRANT CREATE TABLE ON SCHEMA PRD_ML_DB.OUTPUT TO ROLE ML_PRD_ROLE;
+GRANT ALL ON ALL TABLES IN SCHEMA PRD_ML_DB.OUTPUT TO ROLE ML_PRD_ROLE;
+GRANT ALL ON ALL VIEWS IN SCHEMA PRD_ML_DB.OUTPUT TO ROLE ML_PRD_ROLE;
+GRANT ALL ON FUTURE TABLES IN SCHEMA PRD_ML_DB.OUTPUT TO ROLE ML_PRD_ROLE;
+
+-- ============================================================================
+-- 11. GRANT ROLES TO USERS
+-- ============================================================================
+
+-- Grant to users (replace with actual usernames)
+-- GRANT ROLE ML_DEV_ROLE TO USER <developer_username>;
+-- GRANT ROLE ML_SIT_ROLE TO USER <tester_username>;
+-- GRANT ROLE ML_UAT_ROLE TO USER <uat_tester_username>;
+-- GRANT ROLE ML_PRD_ROLE TO USER <deployment_service_account>;
+-- GRANT ROLE ML_CICD_ROLE TO USER <github_actions_user>;
+
+-- ============================================================================
+-- 12. VERIFY SETUP
+-- ============================================================================
+
+SHOW ROLES LIKE 'ML_%';
+
+SELECT 'Roles and Grants Setup Complete!' AS STATUS;
+
+-- To verify grants for a specific role:
+-- SHOW GRANTS TO ROLE ML_DEV_ROLE;
+-- SHOW GRANTS TO ROLE ML_SIT_ROLE;
+-- SHOW GRANTS TO ROLE ML_UAT_ROLE;
+-- SHOW GRANTS TO ROLE ML_PRD_ROLE;
+-- SHOW GRANTS TO ROLE ML_CICD_ROLE;
+

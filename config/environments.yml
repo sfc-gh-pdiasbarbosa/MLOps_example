@@ -1,0 +1,39 @@
+default:
+  project_name: "customer_churn_prediction"
+  model_name: "CHURN_MODEL"
+
+DEV:
+  database: "DEV_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "DEV_WH_XS"
+  tables:
+    raw_data: "DEV_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_store: "DEV_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "DEV_ML_DB.OUTPUT.PREDICTIONS"
+  
+SIT:
+  database: "SIT_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "SIT_WH_S"
+  tables:
+    raw_data: "SIT_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_store: "SIT_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "SIT_ML_DB.OUTPUT.PREDICTIONS"
+
+UAT:
+  database: "UAT_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "UAT_WH_M"
+  tables:
+    raw_data: "UAT_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_store: "UAT_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "UAT_ML_DB.OUTPUT.PREDICTIONS"
+
+PRD:
+  database: "PRD_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "PRD_WH_L"
+  tables:
+    raw_data: "PRD_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_store: "PRD_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "PRD_ML_DB.OUTPUT.PREDICTIONS"

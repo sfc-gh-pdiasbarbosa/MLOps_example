@@ -1,0 +1,144 @@
+import logging
+from snowflake.snowpark.session import Session
+from snowflake.ml.registry import Registry
+from snowflake.ml.feature_store import (
+    FeatureStore,
+    Entity,
+    FeatureView,
+    CreationMode
+)
+from sklearn.linear_model import LogisticRegression
+import pandas as pd
+
+# Set up basic logging
+logger = logging.getLogger("snowflake_ml_pipeline")
+
+def feature_engineering_task(session: Session, source_table: str, target_fs_object: str) -> str:
+    """
+    Step 1: Creates an Entity and Feature View in the Snowflake Feature Store.
+    
+    Args:
+        session: Snowpark Session
+        source_table: Input raw table (e.g. DB.SCHEMA.CUSTOMERS)
+        target_fs_object: Fully qualified name for the Feature View (e.g. DB.SCHEMA.CUSTOMER_FEATURES)
+    """
+    logger.info(f"Starting Feature Store engineering from {source_table}")
+    
+    # 1. Parse connection details from the target string
+    try:
+        parts = target_fs_object.split('.')
+        if len(parts) == 3:
+            db_name, schema_name, fv_name = parts
+        else:
+            # Fallback
+            db_name = session.get_current_database()
+            schema_name = session.get_current_schema()
+            fv_name = target_fs_object
+    except Exception:
+        db_name = session.get_current_database()
+        schema_name = session.get_current_schema()
+        fv_name = target_fs_object
+
+    # 2. Initialize Feature Store Client
+    fs = FeatureStore(
+        session=session, 
+        database=db_name, 
+        schema=schema_name,
+        default_warehouse=session.get_current_warehouse()
+    )
+
+    # 3. Define and Register Entity
+    # We assume 'CUSTOMER_ID' is the primary key in the raw data
+    entity_name = "CUSTOMER_ENTITY"
+    customer_entity = Entity(
+        name=entity_name, 
+        join_keys=["CUSTOMER_ID"],
+        desc="Unique Customer Identifier"
+    )
+    
+    # Register Entity (if_exists='replace' updates definition)
+    fs.register_entity(customer_entity, if_exists=CreationMode.CREATE_IF_NOT_EXIST)
+    logger.info(f"Entity {entity_name} registered.")
+
+    # 4. Define Feature Transformation Logic
+    # Reading from the source table
+    df_raw = session.table(source_table)
+    
+    # Perform transformations (Snowpark DataFrame operations)
+    # Note: Feature Views expect the DataFrame to contain the Join Key (CUSTOMER_ID)
+    df_features = df_raw.fillna(0)
+    
+    # 5. Define Feature View
+    # A Feature View groups the logic with the Entity.
+    # We set a refresh_freq to make it a Dynamic Table (automated refresh).
+    fv = FeatureView(
+        name=fv_name,
+        entities=[customer_entity],
+        feature_df=df_features,
+        refresh_freq="1 day",  # Managed by Snowflake Scheduler
+        desc="Customer features for Churn Prediction"
+    )
+
+    # 6. Register Feature View
+    # This materializes the logic into a Dynamic Table in Snowflake
+    registered_fv = fs.register_feature_view(
+        feature_view=fv,
+        version="v1",
+        if_exists=CreationMode.CREATE_OR_OVERWRITE
+    )
+    
+    return f"Success: Feature View {fv_name} (v1) registered in {db_name}.{schema_name}"
+
+def model_training_task(session: Session, feature_view_path: str, model_name: str, stage_location: str) -> str:
+    """
+    Step 2: Reads features from Feature Store, trains model, registers in Registry.
+    """
+    logger.info(f"Starting Model Training using features from {feature_view_path}")
+    
+    # 1. Load Data
+    # Since the Feature View creates a database object (Dynamic Table), 
+    # we can read it directly via session.table(). 
+    df_snow = session.table(feature_view_path)
+    pdf = df_snow.to_pandas()
+    
+    if "TARGET_LABEL" not in pdf.columns:
+        raise ValueError("TARGET_LABEL column missing from Feature View output")
+
+    # Drop target and keys (CUSTOMER_ID came from Entity)
+    X = pdf.drop(columns=["TARGET_LABEL", "CUSTOMER_ID"]) 
+    y = pdf["TARGET_LABEL"]
+    
+    # 2. Train (Scikit-Learn)
+    clf = LogisticRegression()
+    clf.fit(X, y)
+    
+    # 3. Register Model using Snowflake ML Registry
+    reg = Registry(session=session)
+    
+    # Log the model
+    mv = reg.log_model(
+        model=clf,
+        model_name=model_name,
+        version_name="v1_latest",
+        conda_dependencies=["scikit-learn", "pandas"],
+        comment="Logistic Regression trained on Feature Store data",
+        sample_input_data=X.head() # Good practice for signature inference
+    )
+    
+    return f"Success: Model {model_name} trained and registered."
+
+def inference_task(session: Session, feature_table: str, model_name: str, output_table: str) -> str:
+    """Step 3: Loads model, runs prediction."""
+    logger.info("Starting Batch Inference")
+    
+    reg = Registry(session=session)
+    model_ref = reg.get_model(model_name).version("v1_latest")
+    
+    df_features = session.table(feature_table)
+    
+    # Run prediction
+    result_df = model_ref.run(df_features, function_name="predict")
+    
+    result_df.write.mode("append").save_as_table(output_table)
+    
+    return f"Success: Inference saved to {output_table}"

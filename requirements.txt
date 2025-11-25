@@ -1,0 +1,6 @@
+snowflake-snowpark-python[pandas]
+snowflake-ml-python
+pyyaml
+pandas
+scikit-learn
+pytest
