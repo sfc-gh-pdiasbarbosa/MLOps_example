@@ -108,22 +108,68 @@ sql/05_setup_market_data_tables.sql  # For investment strategy example
 
 Or use the all-in-one script: `sql/99_setup_all_environments.sql`
 
-### Step 2: Configure GitHub Secrets
+### Step 2: Create Snowflake Service Account
 
-```yaml
-# Common secrets
-SNOWFLAKE_ACCOUNT: "<your_account>"
-SNOWFLAKE_USER: "<service_account>"
-SNOWFLAKE_PRIVATE_KEY: "<private_key>"
+```sql
+-- Generate key pair locally first:
+-- openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out snowflake_key.p8 -nocrypt
+-- openssl rsa -in snowflake_key.p8 -pubout -out snowflake_key.pub
 
-# Environment-specific roles
-SNOWFLAKE_DEV_ROLE: "ML_DEV_ROLE"
-SNOWFLAKE_SIT_ROLE: "ML_SIT_ROLE"
-SNOWFLAKE_UAT_ROLE: "ML_UAT_ROLE"
-SNOWFLAKE_PRD_ROLE: "ML_PRD_ROLE"
+USE ROLE ACCOUNTADMIN;
+
+CREATE USER IF NOT EXISTS github_actions_user
+    RSA_PUBLIC_KEY = '<paste content of snowflake_key.pub>'
+    DEFAULT_ROLE = ML_CICD_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT = 'Service account for GitHub Actions CI/CD';
+
+GRANT ROLE ML_CICD_ROLE TO USER github_actions_user;
 ```
 
-### Step 3: Deploy an Example
+### Step 3: Configure GitHub Secrets
+
+Go to **Settings → Secrets and variables → Actions** and add:
+
+| Secret Name | Value | Format |
+|-------------|-------|--------|
+| `SNOWFLAKE_ACCOUNT` | Your account identifier | `orgname-accountname` or `xy12345.us-east-1` |
+| `SNOWFLAKE_USER` | Service account username | `github_actions_user` |
+| `SNOWFLAKE_PRIVATE_KEY` | Private key content | Full PEM including `-----BEGIN/END-----` |
+| `SNOWFLAKE_ROLE` | Fallback role | `ML_CICD_ROLE` |
+
+#### Finding Your Account Identifier
+
+1. Log into Snowsight
+2. Look at URL: `https://app.snowflake.com/ORGNAME/ACCOUNTNAME/`
+3. Your account = `ORGNAME-ACCOUNTNAME`
+
+Or run in Snowflake:
+```sql
+SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();
+```
+
+#### ⚠️ Common Mistakes
+
+| ❌ Wrong | ✅ Correct |
+|----------|-----------|
+| `myorg-myaccount.snowflakecomputing.com` | `myorg-myaccount` |
+| `https://myorg-myaccount.snowflakecomputing.com` | `myorg-myaccount` |
+| Encrypted private key (has passphrase) | Unencrypted key (`-nocrypt` flag) |
+
+#### Optional: Environment-Specific Roles
+
+For more granular access control, add these additional secrets:
+
+```
+SNOWFLAKE_DEV_ROLE: ML_DEV_ROLE
+SNOWFLAKE_SIT_ROLE: ML_SIT_ROLE
+SNOWFLAKE_UAT_ROLE: ML_UAT_ROLE
+SNOWFLAKE_PRD_ROLE: ML_PRD_ROLE
+```
+
+If not set, the workflow falls back to `SNOWFLAKE_ROLE`.
+
+### Step 4: Deploy an Example
 
 ```bash
 # Clone and create a feature branch

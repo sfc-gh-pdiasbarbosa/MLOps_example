@@ -149,21 +149,61 @@ Navigate to **Settings** → **Secrets and variables** → **Actions** → **New
 
 Add the following secrets:
 
-```yaml
-# Common across all environments
-SNOWFLAKE_ACCOUNT: "<your_account_identifier>"
-SNOWFLAKE_USER: "github_actions_user"
-SNOWFLAKE_PRIVATE_KEY: |
-  -----BEGIN PRIVATE KEY-----
-  <your_private_key_content>
-  -----END PRIVATE KEY-----
+| Secret Name | Value | Notes |
+|-------------|-------|-------|
+| `SNOWFLAKE_ACCOUNT` | `myorg-myaccount` | See format below |
+| `SNOWFLAKE_USER` | `github_actions_user` | Service account |
+| `SNOWFLAKE_PRIVATE_KEY` | `-----BEGIN PRIVATE KEY-----...` | Full PEM content |
+| `SNOWFLAKE_ROLE` | `ML_CICD_ROLE` | Fallback role |
 
-# Environment-specific roles
-SNOWFLAKE_DEV_ROLE: "ML_DEV_ROLE"
-SNOWFLAKE_SIT_ROLE: "ML_SIT_ROLE"
-SNOWFLAKE_UAT_ROLE: "ML_UAT_ROLE"
-SNOWFLAKE_PRD_ROLE: "ML_PRD_ROLE"
+#### Account Identifier Format
+
+⚠️ **This is a common source of errors!**
+
+| ✅ Correct | ❌ Wrong |
+|-----------|----------|
+| `myorg-myaccount` | `myorg-myaccount.snowflakecomputing.com` |
+| `xy12345.us-east-1` | `https://xy12345.snowflakecomputing.com` |
+
+**How to find your account identifier:**
+1. Log into Snowsight
+2. Look at URL: `https://app.snowflake.com/ORGNAME/ACCOUNTNAME/`
+3. Your account = `ORGNAME-ACCOUNTNAME`
+
+Or run in Snowflake:
+```sql
+SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();
 ```
+
+#### Private Key Format
+
+The private key must be **unencrypted** (no passphrase). Generate with:
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out snowflake_key.p8 -nocrypt
+openssl rsa -in snowflake_key.p8 -pubout -out snowflake_key.pub
+```
+
+The secret should contain the **entire file content** including headers:
+```
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASC...
+...multiple lines...
+-----END PRIVATE KEY-----
+```
+
+#### Environment-Specific Roles (Optional)
+
+For more granular access control:
+
+```yaml
+SNOWFLAKE_DEV_ROLE: ML_DEV_ROLE
+SNOWFLAKE_SIT_ROLE: ML_SIT_ROLE
+SNOWFLAKE_UAT_ROLE: ML_UAT_ROLE
+SNOWFLAKE_PRD_ROLE: ML_PRD_ROLE
+```
+
+If not configured, the workflow falls back to `SNOWFLAKE_ROLE`.
 
 ### Environment-Level Secrets (Optional, More Secure)
 
