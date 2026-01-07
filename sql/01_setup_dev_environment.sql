@@ -110,7 +110,48 @@ SELECT
 FROM TABLE(GENERATOR(ROWCOUNT => 1000));
 
 -- ============================================================================
--- 6. VERIFY SETUP
+-- 6. ROLE & TASK PRIVILEGES
+-- ============================================================================
+-- Grant EXECUTE TASK privilege to allow the role to run tasks
+-- Replace 'DEV_ML_ROLE' with your actual role name
+
+-- Create a role for ML pipeline operations (if not exists)
+CREATE ROLE IF NOT EXISTS DEV_ML_ROLE
+    COMMENT = 'Role for DEV ML pipeline operations';
+
+-- Grant account-level EXECUTE TASK privilege
+-- This is REQUIRED to deploy and run tasks/DAGs
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE DEV_ML_ROLE;
+GRANT EXECUTE MANAGED TASK ON ACCOUNT TO ROLE DEV_ML_ROLE;
+
+-- Grant usage on warehouse
+GRANT USAGE ON WAREHOUSE DEV_WH_XS TO ROLE DEV_ML_ROLE;
+
+-- Grant database privileges
+GRANT USAGE ON DATABASE DEV_RAW_DB TO ROLE DEV_ML_ROLE;
+GRANT USAGE ON DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+
+-- Grant schema privileges
+GRANT USAGE ON ALL SCHEMAS IN DATABASE DEV_RAW_DB TO ROLE DEV_ML_ROLE;
+GRANT USAGE ON ALL SCHEMAS IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+
+-- Grant object privileges
+GRANT SELECT ON ALL TABLES IN DATABASE DEV_RAW_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON ALL SCHEMAS IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON ALL TABLES IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON ALL STAGES IN SCHEMA DEV_ML_DB.PIPELINES TO ROLE DEV_ML_ROLE;
+
+-- Grant future privileges
+GRANT ALL PRIVILEGES ON FUTURE TABLES IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON FUTURE STAGES IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON FUTURE TASKS IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+GRANT ALL PRIVILEGES ON FUTURE PROCEDURES IN DATABASE DEV_ML_DB TO ROLE DEV_ML_ROLE;
+
+-- Grant the role to your CI/CD user (replace with your actual user)
+-- GRANT ROLE DEV_ML_ROLE TO USER github_actions_user;
+
+-- ============================================================================
+-- 7. VERIFY SETUP
 -- ============================================================================
 
 SHOW DATABASES LIKE 'DEV%';
