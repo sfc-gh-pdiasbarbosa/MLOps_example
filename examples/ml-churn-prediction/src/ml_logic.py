@@ -263,3 +263,4 @@ def inference_main(session: Session) -> str:
     
     return inference_task(session, feature_view, model_name, output_table)
 
+
