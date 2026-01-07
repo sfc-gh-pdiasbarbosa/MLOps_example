@@ -23,7 +23,7 @@ import sys
 from datetime import timedelta
 from snowflake.snowpark import Session
 from snowflake.core import Root
-from snowflake.core.task.dag import DAG, DAGTask, DAGOperation
+from snowflake.core.task.dagv1 import DAG, DAGTask, DAGOperation
 from snowflake.core.task.context import StoredProcedureCall
 
 # Add src to path to import strategy logic
