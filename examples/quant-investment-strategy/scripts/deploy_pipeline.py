@@ -2,7 +2,7 @@
 Investment Strategy Pipeline Deployment Script (Non-ML Example)
 
 This script deploys the quantitative investment strategy pipeline to Snowflake.
-It demonstrates that Snowflake's ML platform features (DAGs, Model Registry, 
+It demonstrates that Snowflake's ML platform features (Tasks, Model Registry, 
 Feature Store) work equally well with non-ML mathematical models.
 
 Pipeline Tasks:
@@ -20,15 +20,10 @@ Example:
 import os
 import yaml
 import sys
-from datetime import timedelta
 from snowflake.snowpark import Session
-from snowflake.core import Root
-from snowflake.core.task.dagv1 import DAG, DAGTask, DAGOperation
-from snowflake.core.task.context import StoredProcedureCall
 
 # Add src to path to import strategy logic
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
-import strategy_logic
 
 
 def get_snowpark_session():
@@ -49,7 +44,7 @@ def get_snowpark_session():
 
 def deploy(env_name: str):
     """
-    Deploy the investment strategy pipeline DAG to the specified environment.
+    Deploy the investment strategy pipeline to the specified environment.
     
     This pipeline differs from ML pipelines:
     - No "training" task (strategy is rule-based, not learned)
@@ -70,118 +65,179 @@ def deploy(env_name: str):
     env_config.update(full_config['default']) 
     
     session = get_snowpark_session()
-    root = Root(session)
     
-    schema_name = env_config['schema']
     db_name = env_config['database']
+    schema_name = env_config['schema']
     wh_name = env_config['warehouse']
     
+    # Table names from config
+    raw_data_table = env_config['tables']['raw_data']
+    feature_store_table = env_config['tables']['feature_store']
+    signals_output_table = env_config['tables']['signals_output']
+    strategy_name = env_config['strategy_name']
+    
     # Stage locations
-    code_stage = f"@{db_name}.{schema_name}.STRATEGY_CODE_STAGE"
-    model_stage = f"@{db_name}.{schema_name}.STRATEGY_MODELS_STAGE"
-
-    dag_name = "INVESTMENT_STRATEGY_PIPELINE"
+    code_stage = f"{db_name}.{schema_name}.STRATEGY_CODE_STAGE"
     
-    print("Defining DAG structure...")
+    print(f"Target: {db_name}.{schema_name}")
+    print(f"Warehouse: {wh_name}")
     
-    # Note: This DAG runs more frequently than ML pipelines
-    # Trading strategies often need hourly or even more frequent updates
-    with DAG(dag_name, schedule=timedelta(hours=1), warehouse=wh_name) as dag:
-        
-        # --- Task 1: Feature Engineering (Technical Indicators) ---
-        # This is similar to ML feature engineering, but calculates
-        # mathematical indicators instead of ML features
-        task_fe = DAGTask(
-            "TASK_CALCULATE_INDICATORS",
-            StoredProcedureCall(
-                strategy_logic.feature_engineering_task,
-                args=[
-                    env_config['tables']['raw_data'],
-                    env_config['tables']['feature_store']
-                ],
-                stage_location=code_stage,
-                packages=[
-                    "snowflake-snowpark-python", 
-                    "pandas", 
-                    "numpy",
-                    "snowflake-ml-python"
-                ],
-                imports=[f"{code_stage}/strategy_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # --- Task 2: Strategy Registration ---
-        # This replaces "training" in ML pipelines
-        # The strategy is registered/updated in the Model Registry
-        # even though it's not an ML model
-        task_register = DAGTask(
-            "TASK_REGISTER_STRATEGY",
-            StoredProcedureCall(
-                strategy_logic.strategy_registration_task,
-                args=[
-                    env_config['tables']['feature_store'],
-                    env_config['strategy_name'],
-                    model_stage
-                ],
-                stage_location=code_stage,
-                packages=[
-                    "snowflake-snowpark-python", 
-                    "pandas", 
-                    "numpy",
-                    "snowflake-ml-python"
-                ],
-                imports=[f"{code_stage}/strategy_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # --- Task 3: Signal Generation ---
-        # This is analogous to "inference" in ML pipelines
-        task_signals = DAGTask(
-            "TASK_GENERATE_SIGNALS",
-            StoredProcedureCall(
-                strategy_logic.signal_generation_task,
-                args=[
-                    env_config['tables']['feature_store'],
-                    env_config['strategy_name'],
-                    env_config['tables']['signals_output']
-                ],
-                stage_location=code_stage,
-                packages=[
-                    "snowflake-snowpark-python", 
-                    "pandas", 
-                    "numpy",
-                    "snowflake-ml-python"
-                ],
-                imports=[f"{code_stage}/strategy_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # Define dependencies
-        # Note: We could skip registration if strategy hasn't changed
-        # but for demonstration, we always update it
-        task_fe >> task_register >> task_signals
-
-    # Deploy DAG
-    print("Deploying DAG to Snowflake...")
-    schema_obj = root.databases[db_name].schemas[schema_name]
-    dag_op = DAGOperation(schema_obj)
+    # Upload strategy logic to stage
+    print("Uploading strategy logic to stage...")
+    strategy_logic_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'strategy_logic.py')
+    session.file.put(
+        strategy_logic_path,
+        f"@{code_stage}",
+        auto_compress=False,
+        overwrite=True
+    )
+    print("✅ Strategy logic uploaded to stage")
     
-    dag_op.deploy(dag, mode="or_replace")
-    print("DAG deployed successfully.")
+    # ========================================
+    # Create Stored Procedures
+    # ========================================
+    
+    print("Creating stored procedures...")
+    
+    # Feature Engineering (Technical Indicators) Stored Procedure
+    fe_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_CALCULATE_INDICATORS()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'numpy', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/strategy_logic.py')
+    HANDLER = 'run_feature_engineering'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
 
-    # Handle environment-specific behavior
+def run_feature_engineering(session: Session) -> str:
+    import strategy_logic
+    return strategy_logic.feature_engineering_task(
+        session, 
+        '{raw_data_table}', 
+        '{feature_store_table}'
+    )
+    $$;
+    """
+    session.sql(fe_sproc_sql).collect()
+    print("  ✅ SP_CALCULATE_INDICATORS created")
+    
+    # Strategy Registration Stored Procedure
+    register_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_REGISTER_STRATEGY()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'numpy', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/strategy_logic.py')
+    HANDLER = 'run_strategy_registration'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
+
+def run_strategy_registration(session: Session) -> str:
+    import strategy_logic
+    return strategy_logic.strategy_registration_task(
+        session,
+        '{feature_store_table}',
+        '{strategy_name}'
+    )
+    $$;
+    """
+    session.sql(register_sproc_sql).collect()
+    print("  ✅ SP_REGISTER_STRATEGY created")
+    
+    # Signal Generation Stored Procedure
+    signals_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_GENERATE_SIGNALS()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'numpy', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/strategy_logic.py')
+    HANDLER = 'run_signal_generation'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
+
+def run_signal_generation(session: Session) -> str:
+    import strategy_logic
+    return strategy_logic.signal_generation_task(
+        session,
+        '{feature_store_table}',
+        '{strategy_name}',
+        '{signals_output_table}'
+    )
+    $$;
+    """
+    session.sql(signals_sproc_sql).collect()
+    print("  ✅ SP_GENERATE_SIGNALS created")
+    
+    # ========================================
+    # Create Tasks (DAG)
+    # ========================================
+    
+    print("Creating task DAG...")
+    
+    # Root task - Calculate Indicators (runs on schedule - hourly for trading)
+    root_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_CALCULATE_INDICATORS
+        WAREHOUSE = {wh_name}
+        SCHEDULE = 'USING CRON 0 * * * * UTC'
+        COMMENT = 'Investment Strategy Pipeline: Calculate Technical Indicators'
+    AS
+        CALL {db_name}.{schema_name}.SP_CALCULATE_INDICATORS();
+    """
+    session.sql(root_task_sql).collect()
+    print("  ✅ TASK_CALCULATE_INDICATORS created")
+    
+    # Register Strategy task - depends on indicators
+    register_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_REGISTER_STRATEGY
+        WAREHOUSE = {wh_name}
+        AFTER {db_name}.{schema_name}.TASK_CALCULATE_INDICATORS
+        COMMENT = 'Investment Strategy Pipeline: Register Strategy in Model Registry'
+    AS
+        CALL {db_name}.{schema_name}.SP_REGISTER_STRATEGY();
+    """
+    session.sql(register_task_sql).collect()
+    print("  ✅ TASK_REGISTER_STRATEGY created")
+    
+    # Generate Signals task - depends on registration
+    signals_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_GENERATE_SIGNALS
+        WAREHOUSE = {wh_name}
+        AFTER {db_name}.{schema_name}.TASK_REGISTER_STRATEGY
+        COMMENT = 'Investment Strategy Pipeline: Generate Trading Signals'
+    AS
+        CALL {db_name}.{schema_name}.SP_GENERATE_SIGNALS();
+    """
+    session.sql(signals_task_sql).collect()
+    print("  ✅ TASK_GENERATE_SIGNALS created")
+    
+    # ========================================
+    # Resume or Execute Tasks
+    # ========================================
+    
     if env_name == 'PRD':
-        print("Environment is PRD: Resuming DAG schedule (hourly).")
-        deployed_dag = dag_op.get(dag_name)
-        deployed_dag.resume()
+        print("Environment is PRD: Resuming task schedule (hourly)...")
+        # Resume tasks in reverse dependency order
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_GENERATE_SIGNALS RESUME").collect()
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_REGISTER_STRATEGY RESUME").collect()
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_CALCULATE_INDICATORS RESUME").collect()
+        print("✅ Tasks resumed - pipeline will run hourly")
     else:
-        print(f"Environment is {env_name}: Leaving DAG suspended.")
-        print("Triggering manual run for testing...")
-        deployed_dag = dag_op.get(dag_name)
-        deployed_dag.execute()
+        print(f"Environment is {env_name}: Tasks created but suspended.")
+        print("To run manually, execute:")
+        print(f"  EXECUTE TASK {db_name}.{schema_name}.TASK_CALCULATE_INDICATORS;")
+    
+    print("\n✅ Investment Strategy Pipeline deployment complete!")
+    session.close()
 
 
 if __name__ == "__main__":
@@ -192,4 +248,3 @@ if __name__ == "__main__":
     
     target_env = sys.argv[1]
     deploy(target_env)
-

@@ -1,8 +1,10 @@
 """
 ML Pipeline Deployment Script for Customer Churn Prediction
 
-This script deploys the ML retraining pipeline to Snowflake as a DAG (Directed Acyclic Graph).
-The DAG orchestrates three tasks:
+This script deploys the ML retraining pipeline to Snowflake.
+It creates stored procedures and orchestrates them via Tasks.
+
+Pipeline Tasks:
 1. Feature Engineering - Updates Feature Store
 2. Model Training - Retrains and registers model
 3. Batch Inference - Runs predictions
@@ -17,21 +19,17 @@ Example:
 import os
 import yaml
 import sys
-from datetime import timedelta
 from snowflake.snowpark import Session
-from snowflake.core import Root
-from snowflake.core.task.dagv1 import DAG, DAGTask, DAGOperation
-from snowflake.core.task.context import StoredProcedureCall
+from snowflake.snowpark.functions import sproc
+from snowflake.snowpark.types import StringType
 
 # Add src to path to import logic definitions
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
-import ml_logic
 
 
 def get_snowpark_session():
     """
     Creates a session using Key Pair authentication.
-    Using raw content from env var.
     """
     connection_params = {
         "account": os.environ["SNOWFLAKE_ACCOUNT"],
@@ -47,7 +45,7 @@ def get_snowpark_session():
 
 def deploy(env_name: str):
     """
-    Deploy the ML pipeline DAG to the specified environment.
+    Deploy the ML pipeline to the specified environment.
     
     Args:
         env_name: Target environment (DEV, SIT, UAT, PRD)
@@ -63,93 +61,179 @@ def deploy(env_name: str):
     env_config.update(full_config['default']) 
     
     session = get_snowpark_session()
-    root = Root(session)
     
-    schema_name = env_config['schema']
     db_name = env_config['database']
+    schema_name = env_config['schema']
     wh_name = env_config['warehouse']
     
+    # Table names from config
+    raw_data_table = env_config['tables']['raw_data']
+    feature_store_table = env_config['tables']['feature_store']
+    inference_output_table = env_config['tables']['inference_output']
+    model_name = env_config['model_name']
+    
     # Stage locations
-    code_stage = f"@{db_name}.{schema_name}.ML_CODE_STAGE"
-    model_stage = f"@{db_name}.{schema_name}.MODELS_STAGE"
-
-    dag_name = "ML_RETRAINING_PIPELINE"
+    code_stage = f"{db_name}.{schema_name}.ML_CODE_STAGE"
     
-    print("Defining DAG structure...")
+    print(f"Target: {db_name}.{schema_name}")
+    print(f"Warehouse: {wh_name}")
     
-    with DAG(dag_name, schedule=timedelta(hours=24), warehouse=wh_name) as dag:
-        
-        # --- Task 1: Feature Engineering (Feature Store) ---
-        task_fe = DAGTask(
-            "TASK_FEATURE_ENG",
-            StoredProcedureCall(
-                ml_logic.feature_engineering_task,
-                args=[
-                    env_config['tables']['raw_data'],
-                    env_config['tables']['feature_store']
-                ],
-                stage_location=code_stage,
-                packages=["snowflake-snowpark-python", "pandas", "snowflake-ml-python"],
-                imports=[f"{code_stage}/ml_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # --- Task 2: Training ---
-        task_train = DAGTask(
-            "TASK_TRAINING",
-            StoredProcedureCall(
-                ml_logic.model_training_task,
-                args=[
-                    env_config['tables']['feature_store'],
-                    env_config['model_name'],
-                    model_stage
-                ],
-                stage_location=code_stage,
-                packages=["snowflake-snowpark-python", "pandas", "scikit-learn", "snowflake-ml-python"],
-                imports=[f"{code_stage}/ml_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # --- Task 3: Inference ---
-        task_infer = DAGTask(
-            "TASK_INFERENCE",
-            StoredProcedureCall(
-                ml_logic.inference_task,
-                args=[
-                    env_config['tables']['feature_store'],
-                    env_config['model_name'],
-                    env_config['tables']['inference_output']
-                ],
-                stage_location=code_stage,
-                packages=["snowflake-snowpark-python", "pandas", "snowflake-ml-python"],
-                imports=[f"{code_stage}/ml_logic.py"]
-            ),
-            warehouse=wh_name
-        )
-
-        # Define task dependencies
-        task_fe >> task_train >> task_infer
-
-    # Deploy DAG
-    print("Deploying DAG to Snowflake...")
-    schema_obj = root.databases[db_name].schemas[schema_name]
-    dag_op = DAGOperation(schema_obj)
+    # Upload ML logic to stage
+    print("Uploading ML logic to stage...")
+    ml_logic_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'ml_logic.py')
+    session.file.put(
+        ml_logic_path,
+        f"@{code_stage}",
+        auto_compress=False,
+        overwrite=True
+    )
+    print("✅ ML logic uploaded to stage")
     
-    dag_op.deploy(dag, mode="or_replace")
-    print("DAG deployed successfully.")
+    # ========================================
+    # Create Stored Procedures
+    # ========================================
+    
+    print("Creating stored procedures...")
+    
+    # Feature Engineering Stored Procedure
+    fe_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_FEATURE_ENGINEERING()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/ml_logic.py')
+    HANDLER = 'run_feature_engineering'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
 
-    # Handle environment-specific behavior
+def run_feature_engineering(session: Session) -> str:
+    import ml_logic
+    return ml_logic.feature_engineering_task(
+        session, 
+        '{raw_data_table}', 
+        '{feature_store_table}'
+    )
+    $$;
+    """
+    session.sql(fe_sproc_sql).collect()
+    print("  ✅ SP_FEATURE_ENGINEERING created")
+    
+    # Model Training Stored Procedure
+    train_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_MODEL_TRAINING()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'scikit-learn', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/ml_logic.py')
+    HANDLER = 'run_model_training'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
+
+def run_model_training(session: Session) -> str:
+    import ml_logic
+    return ml_logic.model_training_task(
+        session,
+        '{feature_store_table}',
+        '{model_name}'
+    )
+    $$;
+    """
+    session.sql(train_sproc_sql).collect()
+    print("  ✅ SP_MODEL_TRAINING created")
+    
+    # Inference Stored Procedure
+    infer_sproc_sql = f"""
+    CREATE OR REPLACE PROCEDURE {db_name}.{schema_name}.SP_INFERENCE()
+    RETURNS STRING
+    LANGUAGE PYTHON
+    RUNTIME_VERSION = '3.11'
+    PACKAGES = ('snowflake-snowpark-python', 'pandas', 'snowflake-ml-python')
+    IMPORTS = ('@{code_stage}/ml_logic.py')
+    HANDLER = 'run_inference'
+    AS
+    $$
+import pandas as pd
+from snowflake.snowpark import Session
+
+def run_inference(session: Session) -> str:
+    import ml_logic
+    return ml_logic.inference_task(
+        session,
+        '{feature_store_table}',
+        '{model_name}',
+        '{inference_output_table}'
+    )
+    $$;
+    """
+    session.sql(infer_sproc_sql).collect()
+    print("  ✅ SP_INFERENCE created")
+    
+    # ========================================
+    # Create Tasks (DAG)
+    # ========================================
+    
+    print("Creating task DAG...")
+    
+    # Root task - Feature Engineering (runs on schedule)
+    root_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_FEATURE_ENGINEERING
+        WAREHOUSE = {wh_name}
+        SCHEDULE = 'USING CRON 0 2 * * * UTC'
+        COMMENT = 'ML Pipeline: Feature Engineering Task'
+    AS
+        CALL {db_name}.{schema_name}.SP_FEATURE_ENGINEERING();
+    """
+    session.sql(root_task_sql).collect()
+    print("  ✅ TASK_FEATURE_ENGINEERING created")
+    
+    # Training task - depends on feature engineering
+    train_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_MODEL_TRAINING
+        WAREHOUSE = {wh_name}
+        AFTER {db_name}.{schema_name}.TASK_FEATURE_ENGINEERING
+        COMMENT = 'ML Pipeline: Model Training Task'
+    AS
+        CALL {db_name}.{schema_name}.SP_MODEL_TRAINING();
+    """
+    session.sql(train_task_sql).collect()
+    print("  ✅ TASK_MODEL_TRAINING created")
+    
+    # Inference task - depends on training
+    infer_task_sql = f"""
+    CREATE OR REPLACE TASK {db_name}.{schema_name}.TASK_INFERENCE
+        WAREHOUSE = {wh_name}
+        AFTER {db_name}.{schema_name}.TASK_MODEL_TRAINING
+        COMMENT = 'ML Pipeline: Batch Inference Task'
+    AS
+        CALL {db_name}.{schema_name}.SP_INFERENCE();
+    """
+    session.sql(infer_task_sql).collect()
+    print("  ✅ TASK_INFERENCE created")
+    
+    # ========================================
+    # Resume or Execute Tasks
+    # ========================================
+    
     if env_name == 'PRD':
-        print("Environment is PRD: Resuming DAG schedule.")
-        deployed_dag = dag_op.get(dag_name)
-        deployed_dag.resume()
+        print("Environment is PRD: Resuming task schedule...")
+        # Resume tasks in reverse dependency order
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_INFERENCE RESUME").collect()
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_MODEL_TRAINING RESUME").collect()
+        session.sql(f"ALTER TASK {db_name}.{schema_name}.TASK_FEATURE_ENGINEERING RESUME").collect()
+        print("✅ Tasks resumed - pipeline will run on schedule")
     else:
-        print(f"Environment is {env_name}: Leaving DAG suspended.")
-        print("Triggering manual run...")
-        deployed_dag = dag_op.get(dag_name)
-        deployed_dag.execute()
+        print(f"Environment is {env_name}: Tasks created but suspended.")
+        print("To run manually, execute:")
+        print(f"  EXECUTE TASK {db_name}.{schema_name}.TASK_FEATURE_ENGINEERING;")
+    
+    print("\n✅ ML Pipeline deployment complete!")
+    session.close()
 
 
 if __name__ == "__main__":
@@ -160,5 +244,3 @@ if __name__ == "__main__":
     
     target_env = sys.argv[1]
     deploy(target_env)
-
-
