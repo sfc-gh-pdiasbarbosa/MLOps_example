@@ -35,11 +35,36 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 def get_snowpark_session():
     """
     Creates a session using Key Pair authentication.
+    Handles PEM-encoded private keys from environment variables.
     """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+    
+    # Load and parse the private key from PEM format
+    private_key_pem = os.environ["SNOWFLAKE_PRIVATE_KEY"]
+    
+    # Handle potential escaped newlines from GitHub secrets
+    if "\\n" in private_key_pem:
+        private_key_pem = private_key_pem.replace("\\n", "\n")
+    
+    # Parse the PEM key
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode('utf-8'),
+        password=None,
+        backend=default_backend()
+    )
+    
+    # Convert to DER format (bytes) which Snowflake expects
+    private_key_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    
     connection_params = {
         "account": os.environ["SNOWFLAKE_ACCOUNT"],
         "user": os.environ["SNOWFLAKE_USER"],
-        "private_key": os.environ["SNOWFLAKE_PRIVATE_KEY"], 
+        "private_key": private_key_bytes,
         "role": os.environ["SNOWFLAKE_ROLE"],
         "warehouse": os.environ["SNOWFLAKE_WAREHOUSE"],
         "database": os.environ["SNOWFLAKE_DATABASE"],
