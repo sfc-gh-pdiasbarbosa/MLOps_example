@@ -89,3 +89,4 @@ python scripts/deploy_pipeline.py DEV
 - [Non-ML Example: Investment Strategy](../quant-investment-strategy/) - Same patterns with custom models
 - [Comparison Guide](../../docs/ML_VS_CUSTOM_MODELS.md) - When to use each approach
 
+# Trigger CI
