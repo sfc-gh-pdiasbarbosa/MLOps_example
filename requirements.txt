@@ -1,5 +1,6 @@
 snowflake-snowpark-python[pandas]
 snowflake-ml-python
+snowflake>=1.0.0
 pyyaml
 pandas
 scikit-learn
