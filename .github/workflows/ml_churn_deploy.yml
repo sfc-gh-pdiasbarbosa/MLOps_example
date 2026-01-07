@@ -1,6 +1,19 @@
 name: Deploy ML Churn Prediction Pipeline
 
 on:
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (DEV, SIT, UAT, PRD)'
+        required: true
+        default: 'DEV'
+        type: choice
+        options:
+          - DEV
+          - SIT
+          - UAT
+          - PRD
   push:
     branches:
       - 'feature/**'
@@ -41,27 +54,53 @@ jobs:
       - name: Determine Environment
         id: env_selector
         run: |
-          if [[ $GITHUB_REF_NAME == feature/* ]]; then
-            echo "ENV_NAME=DEV" >> $GITHUB_ENV
-            echo "SNOWFLAKE_DB=DEV_ML_DB" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WH=DEV_WH_XS" >> $GITHUB_ENV
-            echo "ENV_ROLE_SECRET=SNOWFLAKE_DEV_ROLE" >> $GITHUB_ENV
-          elif [[ $GITHUB_REF_NAME == 'development' ]]; then
-            echo "ENV_NAME=SIT" >> $GITHUB_ENV
-            echo "SNOWFLAKE_DB=SIT_ML_DB" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WH=SIT_WH_S" >> $GITHUB_ENV
-            echo "ENV_ROLE_SECRET=SNOWFLAKE_SIT_ROLE" >> $GITHUB_ENV
-          elif [[ $GITHUB_REF_NAME == release/* ]]; then
-            echo "ENV_NAME=UAT" >> $GITHUB_ENV
-            echo "SNOWFLAKE_DB=UAT_ML_DB" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WH=UAT_WH_M" >> $GITHUB_ENV
-            echo "ENV_ROLE_SECRET=SNOWFLAKE_UAT_ROLE" >> $GITHUB_ENV
-          elif [[ $GITHUB_REF_NAME == 'main' ]]; then
-            echo "ENV_NAME=PRD" >> $GITHUB_ENV
-            echo "SNOWFLAKE_DB=PRD_ML_DB" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WH=PRD_WH_L" >> $GITHUB_ENV
-            echo "ENV_ROLE_SECRET=SNOWFLAKE_PRD_ROLE" >> $GITHUB_ENV
+          # Check if this is a manual workflow_dispatch with environment input
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV_INPUT="${{ github.event.inputs.environment }}"
+            echo "📋 Manual dispatch: targeting $ENV_INPUT environment"
+          else
+            # Determine environment from branch name
+            if [[ $GITHUB_REF_NAME == feature/* ]]; then
+              ENV_INPUT="DEV"
+            elif [[ $GITHUB_REF_NAME == 'development' ]]; then
+              ENV_INPUT="SIT"
+            elif [[ $GITHUB_REF_NAME == release/* ]]; then
+              ENV_INPUT="UAT"
+            elif [[ $GITHUB_REF_NAME == 'main' ]]; then
+              ENV_INPUT="PRD"
+            else
+              ENV_INPUT="DEV"
+            fi
+            echo "🌿 Branch-based: $GITHUB_REF_NAME → $ENV_INPUT environment"
           fi
+          
+          # Set environment variables based on ENV_INPUT
+          case $ENV_INPUT in
+            DEV)
+              echo "ENV_NAME=DEV" >> $GITHUB_ENV
+              echo "SNOWFLAKE_DB=DEV_ML_DB" >> $GITHUB_ENV
+              echo "SNOWFLAKE_WH=DEV_WH_XS" >> $GITHUB_ENV
+              echo "ENV_ROLE_SECRET=SNOWFLAKE_DEV_ROLE" >> $GITHUB_ENV
+              ;;
+            SIT)
+              echo "ENV_NAME=SIT" >> $GITHUB_ENV
+              echo "SNOWFLAKE_DB=SIT_ML_DB" >> $GITHUB_ENV
+              echo "SNOWFLAKE_WH=SIT_WH_S" >> $GITHUB_ENV
+              echo "ENV_ROLE_SECRET=SNOWFLAKE_SIT_ROLE" >> $GITHUB_ENV
+              ;;
+            UAT)
+              echo "ENV_NAME=UAT" >> $GITHUB_ENV
+              echo "SNOWFLAKE_DB=UAT_ML_DB" >> $GITHUB_ENV
+              echo "SNOWFLAKE_WH=UAT_WH_M" >> $GITHUB_ENV
+              echo "ENV_ROLE_SECRET=SNOWFLAKE_UAT_ROLE" >> $GITHUB_ENV
+              ;;
+            PRD)
+              echo "ENV_NAME=PRD" >> $GITHUB_ENV
+              echo "SNOWFLAKE_DB=PRD_ML_DB" >> $GITHUB_ENV
+              echo "SNOWFLAKE_WH=PRD_WH_L" >> $GITHUB_ENV
+              echo "ENV_ROLE_SECRET=SNOWFLAKE_PRD_ROLE" >> $GITHUB_ENV
+              ;;
+          esac
 
       - name: Determine Role
         id: role_selector
