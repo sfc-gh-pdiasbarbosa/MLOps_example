@@ -196,3 +196,70 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     
     return f"Success: Inference saved to {output_table}"
 
+
+# ============================================================================
+# Main Entry Points for Stored Procedures / ML Jobs
+# ============================================================================
+# These functions are called by the DAG tasks. They read configuration from
+# session context (database/schema) and invoke the actual task logic.
+
+def main(session: Session) -> str:
+    """
+    Default main function - runs the full pipeline sequentially.
+    Useful for ML Jobs mode where a single job runs everything.
+    """
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    # Configuration (derived from current context)
+    source_table = f"{db}.{schema}.RAW_CUSTOMER_DATA"
+    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    output_table = f"{db}.{schema}.CHURN_PREDICTIONS"
+    
+    # Run full pipeline
+    result1 = feature_engineering_task(session, source_table, feature_view)
+    logger.info(result1)
+    
+    result2 = model_training_task(session, feature_view, model_name, "")
+    logger.info(result2)
+    
+    result3 = inference_task(session, feature_view, model_name, output_table)
+    logger.info(result3)
+    
+    return "Pipeline complete"
+
+
+def feature_engineering_main(session: Session) -> str:
+    """Entry point for Feature Engineering stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    source_table = f"{db}.{schema}.RAW_CUSTOMER_DATA"
+    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    
+    return feature_engineering_task(session, source_table, feature_view)
+
+
+def model_training_main(session: Session) -> str:
+    """Entry point for Model Training stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    
+    return model_training_task(session, feature_view, model_name, "")
+
+
+def inference_main(session: Session) -> str:
+    """Entry point for Inference stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    output_table = f"{db}.{schema}.CHURN_PREDICTIONS"
+    
+    return inference_task(session, feature_view, model_name, output_table)
+

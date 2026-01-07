@@ -440,3 +440,70 @@ def calculate_volatility(prices: pd.Series, window: int = 20) -> pd.Series:
     volatility = returns.rolling(window=window, min_periods=window).std() * np.sqrt(252)  # Annualized
     return volatility
 
+
+# =============================================================================
+# MAIN ENTRY POINTS - For Stored Procedures / ML Jobs
+# =============================================================================
+# These functions are called by DAG tasks. They read configuration from
+# session context and invoke the actual task logic.
+
+def main(session: Session) -> str:
+    """
+    Default main function - runs the full pipeline sequentially.
+    Useful for ML Jobs mode where a single job runs everything.
+    """
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    # Configuration (derived from current context)
+    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    
+    # Run full pipeline
+    result1 = feature_engineering_task(session, source_table, feature_view)
+    logger.info(result1)
+    
+    result2 = strategy_registration_task(session, feature_view, strategy_name, "")
+    logger.info(result2)
+    
+    result3 = signal_generation_task(session, feature_view, strategy_name, output_table)
+    logger.info(result3)
+    
+    return "Investment strategy pipeline complete"
+
+
+def feature_engineering_main(session: Session) -> str:
+    """Entry point for Technical Indicators stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    
+    return feature_engineering_task(session, source_table, feature_view)
+
+
+def strategy_registration_main(session: Session) -> str:
+    """Entry point for Strategy Registration stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    
+    return strategy_registration_task(session, feature_view, strategy_name, "")
+
+
+def signal_generation_main(session: Session) -> str:
+    """Entry point for Signal Generation stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    
+    return signal_generation_task(session, feature_view, strategy_name, output_table)
+
