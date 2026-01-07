@@ -1,0 +1,49 @@
+# Quantitative Investment Strategy - Environment Configuration
+# ============================================================
+# This file defines environment-specific settings for the non-ML strategy pipeline.
+# 
+# Key differences from ML config:
+# - strategy_name instead of model_name (same registry, different semantics)
+# - signals_output instead of predictions (trading signals, not predictions)
+# - Different table structures for financial data
+
+default:
+  project_name: "momentum_investment_strategy"
+  strategy_name: "MOMENTUM_STRATEGY"
+
+DEV:
+  database: "DEV_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "DEV_WH_XS"
+  tables:
+    raw_data: "DEV_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_store: "DEV_ML_DB.FEATURES.ASSET_TECHNICAL_INDICATORS"
+    signals_output: "DEV_ML_DB.OUTPUT.TRADING_SIGNALS"
+  
+SIT:
+  database: "SIT_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "SIT_WH_S"
+  tables:
+    raw_data: "SIT_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_store: "SIT_ML_DB.FEATURES.ASSET_TECHNICAL_INDICATORS"
+    signals_output: "SIT_ML_DB.OUTPUT.TRADING_SIGNALS"
+
+UAT:
+  database: "UAT_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "UAT_WH_M"
+  tables:
+    raw_data: "UAT_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_store: "UAT_ML_DB.FEATURES.ASSET_TECHNICAL_INDICATORS"
+    signals_output: "UAT_ML_DB.OUTPUT.TRADING_SIGNALS"
+
+PRD:
+  database: "PRD_ML_DB"
+  schema: "PIPELINES"
+  warehouse: "PRD_WH_L"
+  tables:
+    raw_data: "PRD_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_store: "PRD_ML_DB.FEATURES.ASSET_TECHNICAL_INDICATORS"
+    signals_output: "PRD_ML_DB.OUTPUT.TRADING_SIGNALS"
+

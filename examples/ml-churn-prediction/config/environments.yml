@@ -1,3 +1,7 @@
+# ML Churn Prediction - Environment Configuration
+# ================================================
+# This file defines environment-specific settings for the ML pipeline.
+
 default:
   project_name: "customer_churn_prediction"
   model_name: "CHURN_MODEL"
@@ -37,3 +41,4 @@ PRD:
     raw_data: "PRD_RAW_DB.PUBLIC.CUSTOMERS"
     feature_store: "PRD_ML_DB.FEATURES.CUSTOMER_FEATURES"
     inference_output: "PRD_ML_DB.OUTPUT.PREDICTIONS"
+

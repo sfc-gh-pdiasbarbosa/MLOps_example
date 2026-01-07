@@ -1,3 +1,15 @@
+"""
+ML Logic for Customer Churn Prediction
+
+This module contains the core ML pipeline logic for predicting customer churn
+using Snowflake's Feature Store and Model Registry.
+
+Pipeline Steps:
+1. Feature Engineering - Create and register features in Feature Store
+2. Model Training - Train sklearn model and register in Model Registry
+3. Batch Inference - Run predictions and save results
+"""
+
 import logging
 from snowflake.snowpark.session import Session
 from snowflake.ml.registry import Registry
@@ -13,14 +25,23 @@ import pandas as pd
 # Set up basic logging
 logger = logging.getLogger("snowflake_ml_pipeline")
 
+
 def feature_engineering_task(session: Session, source_table: str, target_fs_object: str) -> str:
     """
     Step 1: Creates an Entity and Feature View in the Snowflake Feature Store.
+    
+    This task demonstrates how to use Snowflake's Feature Store to:
+    - Define entities (the primary key for your features)
+    - Create feature views with automated refresh
+    - Materialize features as Dynamic Tables
     
     Args:
         session: Snowpark Session
         source_table: Input raw table (e.g. DB.SCHEMA.CUSTOMERS)
         target_fs_object: Fully qualified name for the Feature View (e.g. DB.SCHEMA.CUSTOMER_FEATURES)
+    
+    Returns:
+        Success message with Feature View details
     """
     logger.info(f"Starting Feature Store engineering from {source_table}")
     
@@ -89,9 +110,24 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     
     return f"Success: Feature View {fv_name} (v1) registered in {db_name}.{schema_name}"
 
+
 def model_training_task(session: Session, feature_view_path: str, model_name: str, stage_location: str) -> str:
     """
     Step 2: Reads features from Feature Store, trains model, registers in Registry.
+    
+    This task demonstrates how to:
+    - Read features from a Feature View (materialized as Dynamic Table)
+    - Train a scikit-learn model
+    - Register the model in Snowflake's Model Registry
+    
+    Args:
+        session: Snowpark Session
+        feature_view_path: Path to the Feature View table
+        model_name: Name for the model in the registry
+        stage_location: Stage for model artifacts
+    
+    Returns:
+        Success message with model registration details
     """
     logger.info(f"Starting Model Training using features from {feature_view_path}")
     
@@ -122,13 +158,30 @@ def model_training_task(session: Session, feature_view_path: str, model_name: st
         version_name="v1_latest",
         conda_dependencies=["scikit-learn", "pandas"],
         comment="Logistic Regression trained on Feature Store data",
-        sample_input_data=X.head() # Good practice for signature inference
+        sample_input_data=X.head()  # Good practice for signature inference
     )
     
     return f"Success: Model {model_name} trained and registered."
 
+
 def inference_task(session: Session, feature_table: str, model_name: str, output_table: str) -> str:
-    """Step 3: Loads model, runs prediction."""
+    """
+    Step 3: Loads model from registry, runs batch prediction.
+    
+    This task demonstrates how to:
+    - Load a model from the Model Registry
+    - Run batch inference using the model's run() method
+    - Save predictions to an output table
+    
+    Args:
+        session: Snowpark Session
+        feature_table: Table containing features for prediction
+        model_name: Name of the model in the registry
+        output_table: Output table for predictions
+    
+    Returns:
+        Success message with output table details
+    """
     logger.info("Starting Batch Inference")
     
     reg = Registry(session=session)
@@ -142,3 +195,4 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     result_df.write.mode("append").save_as_table(output_table)
     
     return f"Success: Inference saved to {output_table}"
+

@@ -1,4 +1,4 @@
-name: Deploy ML Pipeline to Snowflake
+name: Deploy Investment Strategy Pipeline (Non-ML)
 
 on:
   push:
@@ -7,13 +7,19 @@ on:
       - 'development'
       - 'release/**'
       - 'main'
+    paths:
+      - 'examples/quant-investment-strategy/**'
+      - 'shared/**'
+      - '.github/workflows/quant_strategy_deploy.yml'
   pull_request:
     branches:
       - 'development'
       - 'main'
+    paths:
+      - 'examples/quant-investment-strategy/**'
 
 jobs:
-  test_and_deploy:
+  deploy_strategy_pipeline:
     runs-on: ubuntu-latest
     environment: 
       name: ${{ (github.ref == 'refs/heads/main' && 'production') || 'non-production' }}
@@ -76,15 +82,16 @@ jobs:
             --database "${{ env.SNOWFLAKE_DB }}" \
             --schema "PIPELINES"
 
-      - name: Create Stage via Snow CLI
+      - name: Create Stages via Snow CLI
         run: |
-          snow sql -q "CREATE STAGE IF NOT EXISTS ML_CODE_STAGE" -c ci_connection
+          snow sql -q "CREATE STAGE IF NOT EXISTS STRATEGY_CODE_STAGE" -c ci_connection
+          snow sql -q "CREATE STAGE IF NOT EXISTS STRATEGY_MODELS_STAGE" -c ci_connection
 
-      - name: Upload Code Artifacts via Snow CLI
+      - name: Upload Strategy Code Artifacts
         run: |
-          snow stage copy src/ml_logic.py @ML_CODE_STAGE --overwrite -c ci_connection
+          snow stage copy examples/quant-investment-strategy/src/strategy_logic.py @STRATEGY_CODE_STAGE --overwrite -c ci_connection
 
-      - name: Deploy Pipeline Logic
+      - name: Deploy Investment Strategy Pipeline
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
@@ -94,15 +101,18 @@ jobs:
           SNOWFLAKE_DATABASE: ${{ env.SNOWFLAKE_DB }}
           SNOWFLAKE_SCHEMA: "PIPELINES"
         run: |
+          cd examples/quant-investment-strategy
           python scripts/deploy_pipeline.py ${{ env.ENV_NAME }}
       
       - name: Post-Deployment Validation
         run: |
-          echo "Deployment to ${{ env.ENV_NAME }} completed successfully"
+          echo "✅ Investment Strategy Pipeline deployed successfully"
           echo "Environment: ${{ env.ENV_NAME }}"
           echo "Database: ${{ env.SNOWFLAKE_DB }}"
-          echo "Warehouse: ${{ env.SNOWFLAKE_WH }}"
+          echo "Pipeline: INVESTMENT_STRATEGY_PIPELINE"
+          echo "Note: This is a NON-ML custom model example"
           
       - name: Cleanup Key
         if: always()
         run: rm -f deploy_key.p8
+

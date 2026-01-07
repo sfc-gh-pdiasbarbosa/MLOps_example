@@ -1,3 +1,19 @@
+"""
+ML Pipeline Deployment Script for Customer Churn Prediction
+
+This script deploys the ML retraining pipeline to Snowflake as a DAG (Directed Acyclic Graph).
+The DAG orchestrates three tasks:
+1. Feature Engineering - Updates Feature Store
+2. Model Training - Retrains and registers model
+3. Batch Inference - Runs predictions
+
+Usage:
+    python deploy_pipeline.py <ENV_NAME>
+    
+Example:
+    python deploy_pipeline.py DEV
+"""
+
 import os
 import yaml
 import sys
@@ -8,8 +24,9 @@ from snowflake.core.task.dag import DAG, DAGTask, DAGOperation
 from snowflake.core.task.context import StoredProcedureCall
 
 # Add src to path to import logic definitions
-sys.path.append('src')
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 import ml_logic
+
 
 def get_snowpark_session():
     """
@@ -27,13 +44,22 @@ def get_snowpark_session():
     }
     return Session.builder.configs(connection_params).create()
 
-def deploy(env_name):
-    print(f"--- Deploying to Environment: {env_name} ---")
+
+def deploy(env_name: str):
+    """
+    Deploy the ML pipeline DAG to the specified environment.
     
-    with open("config/environments.yaml", "r") as f:
+    Args:
+        env_name: Target environment (DEV, SIT, UAT, PRD)
+    """
+    print(f"--- Deploying ML Pipeline to Environment: {env_name} ---")
+    
+    # Load configuration
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'environments.yml')
+    with open(config_path, "r") as f:
         full_config = yaml.safe_load(f)
     
-    env_config = full_config[env_name]
+    env_config = full_config[env_name].copy()
     env_config.update(full_config['default']) 
     
     session = get_snowpark_session()
@@ -43,7 +69,7 @@ def deploy(env_name):
     db_name = env_config['database']
     wh_name = env_config['warehouse']
     
-    # Locations
+    # Stage locations
     code_stage = f"@{db_name}.{schema_name}.ML_CODE_STAGE"
     model_stage = f"@{db_name}.{schema_name}.MODELS_STAGE"
 
@@ -60,7 +86,7 @@ def deploy(env_name):
                 ml_logic.feature_engineering_task,
                 args=[
                     env_config['tables']['raw_data'],
-                    env_config['tables']['feature_store'] # Passed as the Feature View name
+                    env_config['tables']['feature_store']
                 ],
                 stage_location=code_stage,
                 packages=["snowflake-snowpark-python", "pandas", "snowflake-ml-python"],
@@ -75,7 +101,7 @@ def deploy(env_name):
             StoredProcedureCall(
                 ml_logic.model_training_task,
                 args=[
-                    env_config['tables']['feature_store'], # Reads the Feature View (Table)
+                    env_config['tables']['feature_store'],
                     env_config['model_name'],
                     model_stage
                 ],
@@ -103,10 +129,10 @@ def deploy(env_name):
             warehouse=wh_name
         )
 
-        # Dependencies
+        # Define task dependencies
         task_fe >> task_train >> task_infer
 
-    # Deploy
+    # Deploy DAG
     print("Deploying DAG to Snowflake...")
     schema_obj = root.databases[db_name].schemas[schema_name]
     dag_op = DAGOperation(schema_obj)
@@ -114,6 +140,7 @@ def deploy(env_name):
     dag_op.deploy(dag, mode="or_replace")
     print("DAG deployed successfully.")
 
+    # Handle environment-specific behavior
     if env_name == 'PRD':
         print("Environment is PRD: Resuming DAG schedule.")
         deployed_dag = dag_op.get(dag_name)
@@ -124,6 +151,13 @@ def deploy(env_name):
         deployed_dag = dag_op.get(dag_name)
         deployed_dag.execute()
 
+
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python deploy_pipeline.py <ENV_NAME>")
+        print("Example: python deploy_pipeline.py DEV")
+        sys.exit(1)
+    
     target_env = sys.argv[1]
     deploy(target_env)
+

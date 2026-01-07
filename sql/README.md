@@ -16,6 +16,7 @@ Execute the scripts in order in Snowsight:
 4. **UAT Environment** → `02b_setup_uat_environment.sql`
 5. **PRD Environment** → `03_setup_prd_environment.sql`
 6. **Security & Roles** → `04_setup_roles_and_grants.sql`
+7. **Market Data (for Investment Strategy)** → `05_setup_market_data_tables.sql`
 
 ## 📁 Script Details
 
@@ -105,6 +106,22 @@ Creates security roles and grants permissions:
 **Required Role:** `SECURITYADMIN` or `ACCOUNTADMIN`
 
 **Action Required:** Uncomment and update user assignments at the end of the script
+
+---
+
+### 05_setup_market_data_tables.sql
+Sets up tables for the **Investment Strategy (non-ML) example**:
+- **Tables:**
+  - `MARKET_DATA` - Raw OHLCV price data with technical indicators
+  - `TRADING_SIGNALS` - Strategy output signals (BUY/SELL/HOLD)
+- **Stages:**
+  - `STRATEGY_CODE_STAGE` - Strategy Python code
+  - `STRATEGY_MODELS_STAGE` - Registered strategy artifacts
+- **Sample Data:** 10 assets × 100 days of simulated price data
+
+**Required Role:** `ACCOUNTADMIN` or role with appropriate privileges
+
+**Note:** Run this AFTER the main environment setup scripts (00-04)
 
 ---
 
