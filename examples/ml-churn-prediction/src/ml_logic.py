@@ -61,11 +61,11 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         fv_name = target_fs_object
 
     # 2. Initialize Feature Store Client
+    # Use session context - FeatureStore will use current database/schema
     fs = FeatureStore(
-        session=session, 
-        database=db_name, 
-        schema=schema_name,
-        default_warehouse=session.get_current_warehouse()
+        session=session,
+        database=db_name,
+        name=schema_name
     )
 
     # 3. Define and Register Entity
