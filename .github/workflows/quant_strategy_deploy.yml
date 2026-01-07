@@ -165,11 +165,20 @@ jobs:
           
           # Test the connection
           echo "Testing connection..."
-          snow connection test -c ci_connection || {
+          echo "Account format should be: orgname-accountname OR accountlocator.region"
+          echo "Account (first 5 chars): ${SNOWFLAKE_ACCOUNT:0:5}***"
+          
+          snow connection test -c ci_connection --debug 2>&1 || {
+            echo ""
             echo "❌ Connection test failed"
-            echo "Debug: Checking key format..."
-            head -1 deploy_key.p8
-            tail -1 deploy_key.p8
+            echo ""
+            echo "Common fixes for 404 error:"
+            echo "  - Account should NOT include 'snowflakecomputing.com'"
+            echo "  - Use format: orgname-accountname OR xy12345.us-east-1"
+            echo ""
+            echo "Debug: Key format check..."
+            echo "First line: $(head -1 deploy_key.p8)"
+            echo "Last line: $(tail -1 deploy_key.p8)"
             exit 1
           }
           echo "✅ Connection configured successfully"
