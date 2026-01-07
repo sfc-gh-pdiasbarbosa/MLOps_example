@@ -141,18 +141,38 @@ jobs:
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
         run: |
+          # Write the private key file
           echo "$SNOWFLAKE_PRIVATE_KEY" > deploy_key.p8
           chmod 600 deploy_key.p8
           
-          snow connection add \
-            --connection-name ci_connection \
-            --account "$SNOWFLAKE_ACCOUNT" \
-            --user "$SNOWFLAKE_USER" \
-            --private-key-path "deploy_key.p8" \
-            --role "${{ env.SNOWFLAKE_ROLE_FINAL }}" \
-            --warehouse "${{ env.SNOWFLAKE_WH }}" \
-            --database "${{ env.SNOWFLAKE_DB }}" \
-            --schema "PIPELINES"
+          # Create Snow CLI config directory
+          mkdir -p ~/.snowflake
+          
+          # Create connections config file (TOML format)
+          cat > ~/.snowflake/connections.toml << EOF
+          [ci_connection]
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          private_key_path = "$(pwd)/deploy_key.p8"
+          role = "${{ env.SNOWFLAKE_ROLE_FINAL }}"
+          warehouse = "${{ env.SNOWFLAKE_WH }}"
+          database = "${{ env.SNOWFLAKE_DB }}"
+          schema = "PIPELINES"
+          authenticator = "SNOWFLAKE_JWT"
+          EOF
+          
+          chmod 600 ~/.snowflake/connections.toml
+          
+          # Test the connection
+          echo "Testing connection..."
+          snow connection test -c ci_connection || {
+            echo "❌ Connection test failed"
+            echo "Debug: Checking key format..."
+            head -1 deploy_key.p8
+            tail -1 deploy_key.p8
+            exit 1
+          }
+          echo "✅ Connection configured successfully"
 
       - name: Create Stages via Snow CLI
         run: |
