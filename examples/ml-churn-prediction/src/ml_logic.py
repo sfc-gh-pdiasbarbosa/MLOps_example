@@ -210,14 +210,16 @@ def main(session: Session) -> str:
     Default main function - runs the full pipeline sequentially.
     Useful for ML Jobs mode where a single job runs everything.
     """
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database()  # e.g., DEV_ML_DB
     
-    # Configuration (derived from current context)
-    source_table = f"{db}.{schema}.RAW_CUSTOMER_DATA"
-    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    # Derive environment prefix (DEV, SIT, UAT, PRD) from current database
+    env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
+    
+    # Configuration - raw data is in separate database
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
     model_name = "CHURN_PREDICTION_MODEL"
-    output_table = f"{db}.{schema}.CHURN_PREDICTIONS"
+    output_table = f"{db}.OUTPUT.CHURN_PREDICTIONS"
     
     # Run full pipeline
     result1 = feature_engineering_task(session, source_table, feature_view)
@@ -234,21 +236,24 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Feature Engineering stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database()  # e.g., DEV_ML_DB
     
-    source_table = f"{db}.{schema}.RAW_CUSTOMER_DATA"
-    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    # Derive environment prefix from current database
+    env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
+    
+    # Raw data is in separate database, features go to FEATURES schema
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
     
     return feature_engineering_task(session, source_table, feature_view)
 
 
 def model_training_main(session: Session) -> str:
     """Entry point for Model Training stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database()  # e.g., DEV_ML_DB
     
-    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    # Features are in FEATURES schema
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
     model_name = "CHURN_PREDICTION_MODEL"
     
     return model_training_task(session, feature_view, model_name, "")
@@ -256,12 +261,12 @@ def model_training_main(session: Session) -> str:
 
 def inference_main(session: Session) -> str:
     """Entry point for Inference stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database()  # e.g., DEV_ML_DB
     
-    feature_view = f"{db}.{schema}.CUSTOMER_FEATURES"
+    # Features from FEATURES schema, output to OUTPUT schema
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
     model_name = "CHURN_PREDICTION_MODEL"
-    output_table = f"{db}.{schema}.CHURN_PREDICTIONS"
+    output_table = f"{db}.OUTPUT.CHURN_PREDICTIONS"
     
     return inference_task(session, feature_view, model_name, output_table)
 
