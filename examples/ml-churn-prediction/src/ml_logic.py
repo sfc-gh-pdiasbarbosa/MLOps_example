@@ -61,11 +61,13 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         fv_name = target_fs_object
 
     # 2. Initialize Feature Store Client
+    # Use CREATE_IF_NOT_EXIST to create Feature Store metadata if not present
     fs = FeatureStore(
-        session=session, 
-        database=db_name, 
-        schema=schema_name,
-        default_warehouse=session.get_current_warehouse()
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=session.get_current_warehouse(),
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
     )
 
     # 3. Define and Register Entity
@@ -77,8 +79,8 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         desc="Unique Customer Identifier"
     )
     
-    # Register Entity (if_exists='replace' updates definition)
-    fs.register_entity(customer_entity, if_exists=CreationMode.CREATE_IF_NOT_EXIST)
+    # Register Entity
+    fs.register_entity(customer_entity)
     logger.info(f"Entity {entity_name} registered.")
 
     # 4. Define Feature Transformation Logic
@@ -195,4 +197,77 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     result_df.write.mode("append").save_as_table(output_table)
     
     return f"Success: Inference saved to {output_table}"
+
+
+# ============================================================================
+# Main Entry Points for Stored Procedures / ML Jobs
+# ============================================================================
+# These functions are called by the DAG tasks. They read configuration from
+# session context (database/schema) and invoke the actual task logic.
+
+def main(session: Session) -> str:
+    """
+    Default main function - runs the full pipeline sequentially.
+    Useful for ML Jobs mode where a single job runs everything.
+    """
+    db = session.get_current_database()  # e.g., DEV_ML_DB
+    
+    # Derive environment prefix (DEV, SIT, UAT, PRD) from current database
+    env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
+    
+    # Configuration - raw data is in separate database
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    output_table = f"{db}.OUTPUT.CHURN_PREDICTIONS"
+    
+    # Run full pipeline
+    result1 = feature_engineering_task(session, source_table, feature_view)
+    logger.info(result1)
+    
+    result2 = model_training_task(session, feature_view, model_name, "")
+    logger.info(result2)
+    
+    result3 = inference_task(session, feature_view, model_name, output_table)
+    logger.info(result3)
+    
+    return "Pipeline complete"
+
+
+def feature_engineering_main(session: Session) -> str:
+    """Entry point for Feature Engineering stored procedure."""
+    db = session.get_current_database()  # e.g., DEV_ML_DB
+    
+    # Derive environment prefix from current database
+    env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
+    
+    # Raw data is in separate database, features go to FEATURES schema
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
+    
+    return feature_engineering_task(session, source_table, feature_view)
+
+
+def model_training_main(session: Session) -> str:
+    """Entry point for Model Training stored procedure."""
+    db = session.get_current_database()  # e.g., DEV_ML_DB
+    
+    # Features are in FEATURES schema
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    
+    return model_training_task(session, feature_view, model_name, "")
+
+
+def inference_main(session: Session) -> str:
+    """Entry point for Inference stored procedure."""
+    db = session.get_current_database()  # e.g., DEV_ML_DB
+    
+    # Features from FEATURES schema, output to OUTPUT schema
+    feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
+    model_name = "CHURN_PREDICTION_MODEL"
+    output_table = f"{db}.OUTPUT.CHURN_PREDICTIONS"
+    
+    return inference_task(session, feature_view, model_name, output_table)
+
 

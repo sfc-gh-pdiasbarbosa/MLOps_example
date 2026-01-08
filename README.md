@@ -104,9 +104,12 @@ sql/02b_setup_uat_environment.sql
 sql/03_setup_prd_environment.sql
 sql/04_setup_roles_and_grants.sql
 sql/05_setup_market_data_tables.sql  # For investment strategy example
+sql/06_setup_network_policy.sql      # For GitHub Actions access
 ```
 
 Or use the all-in-one script: `sql/99_setup_all_environments.sql`
+
+> ⚠️ **Network Policy Required**: If your Snowflake account has network policies enabled, you MUST run `06_setup_network_policy.sql` or GitHub Actions will be blocked with error: `IP is not allowed to access Snowflake`
 
 ### Step 2: Create Snowflake Service Account
 

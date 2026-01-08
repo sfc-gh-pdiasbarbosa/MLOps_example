@@ -1,5 +1,7 @@
 snowflake-snowpark-python[pandas]
 snowflake-ml-python
+snowflake>=1.0.0
+cryptography
 pyyaml
 pandas
 scikit-learn

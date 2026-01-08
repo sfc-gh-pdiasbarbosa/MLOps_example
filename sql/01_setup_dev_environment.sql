@@ -110,7 +110,44 @@ SELECT
 FROM TABLE(GENERATOR(ROWCOUNT => 1000));
 
 -- ============================================================================
--- 6. VERIFY SETUP
+-- 6. ROLE & TASK PRIVILEGES
+-- ============================================================================
+-- Grant EXECUTE TASK privilege to allow the role to run tasks
+-- Replace 'DEV_ML_ROLE' with your actual role name
+
+-- ============================================================================
+-- NOTE: For complete role setup, run script 04_setup_roles_and_grants.sql
+-- This section provides quick DEV-only grants using ML_DEV_ROLE
+-- ============================================================================
+
+-- Grant account-level EXECUTE TASK privilege (REQUIRED for DAGs)
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE ML_DEV_ROLE;
+GRANT EXECUTE MANAGED TASK ON ACCOUNT TO ROLE ML_DEV_ROLE;
+
+-- Ensure role has warehouse access
+GRANT USAGE ON WAREHOUSE DEV_WH_XS TO ROLE ML_DEV_ROLE;
+GRANT OPERATE ON WAREHOUSE DEV_WH_XS TO ROLE ML_DEV_ROLE;
+
+-- Grant CREATE privileges needed for Feature Store
+GRANT CREATE DYNAMIC TABLE ON SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+GRANT CREATE VIEW ON SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+GRANT CREATE TAG ON SCHEMA DEV_ML_DB.FEATURES TO ROLE ML_DEV_ROLE;
+
+-- Grant CREATE privileges on PIPELINES schema
+GRANT CREATE PROCEDURE ON SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+GRANT CREATE TASK ON SCHEMA DEV_ML_DB.PIPELINES TO ROLE ML_DEV_ROLE;
+
+-- ============================================================================
+-- IMPORTANT: Grant the role to your CI/CD user
+-- ============================================================================
+-- Uncomment and replace with your actual GitHub Actions user:
+-- GRANT ROLE ML_DEV_ROLE TO USER github_actions_user;
+
+-- Also ensure the role can be used by SYSADMIN
+GRANT ROLE ML_DEV_ROLE TO ROLE SYSADMIN;
+
+-- ============================================================================
+-- 7. VERIFY SETUP
 -- ============================================================================
 
 SHOW DATABASES LIKE 'DEV%';

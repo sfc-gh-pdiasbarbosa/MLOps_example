@@ -215,11 +215,13 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         fv_name = target_fs_object
     
     # Initialize Feature Store
+    # Use CREATE_IF_NOT_EXIST to create Feature Store metadata if not present
     fs = FeatureStore(
         session=session,
         database=db_name,
-        schema=schema_name,
-        default_warehouse=session.get_current_warehouse()
+        name=schema_name,
+        default_warehouse=session.get_current_warehouse(),
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
     )
     
     # Define Entity (ASSET_ID is the primary key)
@@ -229,7 +231,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         join_keys=["ASSET_ID"],
         desc="Unique Asset/Security Identifier"
     )
-    fs.register_entity(asset_entity, if_exists=CreationMode.CREATE_IF_NOT_EXIST)
+    fs.register_entity(asset_entity)
     logger.info(f"Entity {entity_name} registered.")
     
     # Read raw price data
@@ -439,4 +441,71 @@ def calculate_volatility(prices: pd.Series, window: int = 20) -> pd.Series:
     returns = prices.pct_change()
     volatility = returns.rolling(window=window, min_periods=window).std() * np.sqrt(252)  # Annualized
     return volatility
+
+
+# =============================================================================
+# MAIN ENTRY POINTS - For Stored Procedures / ML Jobs
+# =============================================================================
+# These functions are called by DAG tasks. They read configuration from
+# session context and invoke the actual task logic.
+
+def main(session: Session) -> str:
+    """
+    Default main function - runs the full pipeline sequentially.
+    Useful for ML Jobs mode where a single job runs everything.
+    """
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    # Configuration (derived from current context)
+    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    
+    # Run full pipeline
+    result1 = feature_engineering_task(session, source_table, feature_view)
+    logger.info(result1)
+    
+    result2 = strategy_registration_task(session, feature_view, strategy_name, "")
+    logger.info(result2)
+    
+    result3 = signal_generation_task(session, feature_view, strategy_name, output_table)
+    logger.info(result3)
+    
+    return "Investment strategy pipeline complete"
+
+
+def feature_engineering_main(session: Session) -> str:
+    """Entry point for Technical Indicators stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    
+    return feature_engineering_task(session, source_table, feature_view)
+
+
+def strategy_registration_main(session: Session) -> str:
+    """Entry point for Strategy Registration stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    
+    return strategy_registration_task(session, feature_view, strategy_name, "")
+
+
+def signal_generation_main(session: Session) -> str:
+    """Entry point for Signal Generation stored procedure."""
+    db = session.get_current_database()
+    schema = session.get_current_schema()
+    
+    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    strategy_name = "MOMENTUM_STRATEGY"
+    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    
+    return signal_generation_task(session, feature_view, strategy_name, output_table)
 

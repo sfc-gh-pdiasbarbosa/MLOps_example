@@ -17,6 +17,7 @@ Execute the scripts in order in Snowsight:
 5. **PRD Environment** → `03_setup_prd_environment.sql`
 6. **Security & Roles** → `04_setup_roles_and_grants.sql`
 7. **Market Data (for Investment Strategy)** → `05_setup_market_data_tables.sql`
+8. **Network Policy (for GitHub Actions)** → `06_setup_network_policy.sql`
 
 ## 📁 Script Details
 
@@ -122,6 +123,26 @@ Sets up tables for the **Investment Strategy (non-ML) example**:
 **Required Role:** `ACCOUNTADMIN` or role with appropriate privileges
 
 **Note:** Run this AFTER the main environment setup scripts (00-04)
+
+---
+
+### 06_setup_network_policy.sql
+Configures network access for **GitHub Actions CI/CD**:
+- Creates network policy for CI/CD service account
+- Multiple options depending on your setup:
+  - **Option 1**: Create new dedicated policy
+  - **Option 2**: Add rule to existing policy (preserving IPs)
+  - **Option 3**: Permissive testing policy
+  - **Option 4**: Use existing organization GitHub rule
+
+**Required Role:** `SECURITYADMIN` or `ACCOUNTADMIN`
+
+**Important:** If your Snowflake account has network policies enabled, GitHub Actions runners will be blocked unless you configure this. Common error:
+```
+IP/Token xxx.xxx.xxx.xxx is not allowed to access Snowflake
+```
+
+**If your organization already has a GitHub Actions network rule** (e.g., `GITHUBACTIONS_GLOBAL`), uncomment Option 4 in the script.
 
 ---
 
