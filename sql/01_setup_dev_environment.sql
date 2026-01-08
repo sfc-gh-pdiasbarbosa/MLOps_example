@@ -34,6 +34,7 @@ CREATE OR REPLACE TABLE DEV_RAW_DB.PUBLIC.CUSTOMERS (
     TARGET_LABEL INTEGER,  -- 1 = churned, 0 = retained
     LAST_UPDATED TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 )
+CHANGE_TRACKING = TRUE  -- Required for Dynamic Tables / Feature Store
 COMMENT = 'DEV: Raw customer data for churn prediction';
 
 -- ============================================================================
