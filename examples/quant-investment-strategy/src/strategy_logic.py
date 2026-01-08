@@ -215,11 +215,13 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         fv_name = target_fs_object
     
     # Initialize Feature Store
+    # Use CREATE_IF_NOT_EXIST to create Feature Store metadata if not present
     fs = FeatureStore(
         session=session,
         database=db_name,
         name=schema_name,
-        default_warehouse=session.get_current_warehouse()
+        default_warehouse=session.get_current_warehouse(),
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
     )
     
     # Define Entity (ASSET_ID is the primary key)
