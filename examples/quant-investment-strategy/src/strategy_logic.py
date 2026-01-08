@@ -454,8 +454,8 @@ def main(session: Session) -> str:
     Default main function - runs the full pipeline sequentially.
     Useful for ML Jobs mode where a single job runs everything.
     """
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database().strip('"')
+    schema = session.get_current_schema().strip('"')
     
     # Configuration (derived from current context)
     source_table = f"{db}.{schema}.RAW_MARKET_DATA"
@@ -478,8 +478,8 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Technical Indicators stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database().strip('"')
+    schema = session.get_current_schema().strip('"')
     
     source_table = f"{db}.{schema}.RAW_MARKET_DATA"
     feature_view = f"{db}.{schema}.ASSET_FEATURES"
@@ -489,8 +489,8 @@ def feature_engineering_main(session: Session) -> str:
 
 def strategy_registration_main(session: Session) -> str:
     """Entry point for Strategy Registration stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database().strip('"')
+    schema = session.get_current_schema().strip('"')
     
     feature_view = f"{db}.{schema}.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
@@ -500,8 +500,8 @@ def strategy_registration_main(session: Session) -> str:
 
 def signal_generation_main(session: Session) -> str:
     """Entry point for Signal Generation stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db = session.get_current_database().strip('"')
+    schema = session.get_current_schema().strip('"')
     
     feature_view = f"{db}.{schema}.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"

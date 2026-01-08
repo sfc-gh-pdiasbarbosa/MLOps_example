@@ -210,7 +210,8 @@ def main(session: Session) -> str:
     Default main function - runs the full pipeline sequentially.
     Useful for ML Jobs mode where a single job runs everything.
     """
-    db = session.get_current_database()  # e.g., DEV_ML_DB
+    # Get current database and strip any quotes
+    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
     
     # Derive environment prefix (DEV, SIT, UAT, PRD) from current database
     env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
@@ -236,7 +237,8 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Feature Engineering stored procedure."""
-    db = session.get_current_database()  # e.g., DEV_ML_DB
+    # Get current database and strip any quotes
+    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
     
     # Derive environment prefix from current database
     env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
@@ -250,7 +252,7 @@ def feature_engineering_main(session: Session) -> str:
 
 def model_training_main(session: Session) -> str:
     """Entry point for Model Training stored procedure."""
-    db = session.get_current_database()  # e.g., DEV_ML_DB
+    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
     
     # Features are in FEATURES schema
     feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
@@ -261,7 +263,7 @@ def model_training_main(session: Session) -> str:
 
 def inference_main(session: Session) -> str:
     """Entry point for Inference stored procedure."""
-    db = session.get_current_database()  # e.g., DEV_ML_DB
+    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
     
     # Features from FEATURES schema, output to OUTPUT schema
     feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
