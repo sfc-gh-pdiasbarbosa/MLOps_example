@@ -79,8 +79,8 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         desc="Unique Customer Identifier"
     )
     
-    # Register Entity (if_exists='replace' updates definition)
-    fs.register_entity(customer_entity, if_exists=CreationMode.CREATE_IF_NOT_EXIST)
+    # Register Entity
+    fs.register_entity(customer_entity)
     logger.info(f"Entity {entity_name} registered.")
 
     # 4. Define Feature Transformation Logic

@@ -231,7 +231,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         join_keys=["ASSET_ID"],
         desc="Unique Asset/Security Identifier"
     )
-    fs.register_entity(asset_entity, if_exists=CreationMode.CREATE_IF_NOT_EXIST)
+    fs.register_entity(asset_entity)
     logger.info(f"Entity {entity_name} registered.")
     
     # Read raw price data
