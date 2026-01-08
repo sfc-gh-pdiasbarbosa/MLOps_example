@@ -124,7 +124,7 @@ def model_training_task(session: Session, feature_view_path: str, model_name: st
     
     Args:
         session: Snowpark Session
-        feature_view_path: Path to the Feature View table
+        feature_view_path: Path to the Feature View (DB.SCHEMA.FV_NAME format)
         model_name: Name for the model in the registry
         stage_location: Stage for model artifacts
     
@@ -133,22 +133,50 @@ def model_training_task(session: Session, feature_view_path: str, model_name: st
     """
     logger.info(f"Starting Model Training using features from {feature_view_path}")
     
-    # 1. Load Data
-    # Since the Feature View creates a database object (Dynamic Table), 
-    # we can read it directly via session.table(). 
-    df_snow = session.table(feature_view_path)
+    # Parse feature view path
+    parts = feature_view_path.split(".")
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = parts
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_view_path
+    
+    # 1. Load Data from Feature Store
+    # Use FeatureStore API to get the feature view
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=session.get_current_warehouse().strip('"'),
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    # Get the feature view and read as DataFrame
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_snow = fv.feature_df
     pdf = df_snow.to_pandas()
     
+    logger.info(f"Loaded {len(pdf)} rows from feature view")
+    logger.info(f"Columns: {list(pdf.columns)}")
+    
     if "TARGET_LABEL" not in pdf.columns:
-        raise ValueError("TARGET_LABEL column missing from Feature View output")
+        raise ValueError(f"TARGET_LABEL column missing from Feature View output. Available columns: {list(pdf.columns)}")
 
     # Drop target and keys (CUSTOMER_ID came from Entity)
-    X = pdf.drop(columns=["TARGET_LABEL", "CUSTOMER_ID"]) 
+    drop_cols = ["TARGET_LABEL", "CUSTOMER_ID"]
+    drop_cols = [c for c in drop_cols if c in pdf.columns]
+    X = pdf.drop(columns=drop_cols)
     y = pdf["TARGET_LABEL"]
     
+    # Remove non-numeric columns for training
+    X = X.select_dtypes(include=['number'])
+    
     # 2. Train (Scikit-Learn)
-    clf = LogisticRegression()
+    clf = LogisticRegression(max_iter=1000)
     clf.fit(X, y)
+    
+    logger.info(f"Model trained with {len(X.columns)} features")
     
     # 3. Register Model using Snowflake ML Registry
     reg = Registry(session=session)
@@ -177,7 +205,7 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     
     Args:
         session: Snowpark Session
-        feature_table: Table containing features for prediction
+        feature_table: Path to Feature View (DB.SCHEMA.FV_NAME format)
         model_name: Name of the model in the registry
         output_table: Output table for predictions
     
@@ -186,15 +214,37 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     """
     logger.info("Starting Batch Inference")
     
+    # Parse feature view path
+    parts = feature_table.split(".")
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = parts
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_table
+    
+    # Get features from Feature Store
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=session.get_current_warehouse().strip('"'),
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_features = fv.feature_df
+    
+    # Get model from registry
     reg = Registry(session=session)
     model_ref = reg.get_model(model_name).version("v1_latest")
-    
-    df_features = session.table(feature_table)
     
     # Run prediction
     result_df = model_ref.run(df_features, function_name="predict")
     
-    result_df.write.mode("append").save_as_table(output_table)
+    result_df.write.mode("overwrite").save_as_table(output_table)
+    
+    logger.info(f"Predictions saved to {output_table}")
     
     return f"Success: Inference saved to {output_table}"
 
