@@ -107,7 +107,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     registered_fv = fs.register_feature_view(
         feature_view=fv,
         version="v1",
-        if_exists=CreationMode.CREATE_OR_OVERWRITE
+        overwrite=True
     )
     
     return f"Success: Feature View {fv_name} (v1) registered in {db_name}.{schema_name}"
