@@ -181,17 +181,23 @@ def model_training_task(session: Session, feature_view_path: str, model_name: st
     # 3. Register Model using Snowflake ML Registry
     reg = Registry(session=session)
     
-    # Log the model
+    # Generate timestamp-based version name
+    from datetime import datetime
+    version_name = f"v_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    
+    # Log the model with auto-generated version
     mv = reg.log_model(
         model=clf,
         model_name=model_name,
-        version_name="v1_latest",
+        version_name=version_name,
         conda_dependencies=["scikit-learn", "pandas"],
-        comment="Logistic Regression trained on Feature Store data",
+        comment=f"Logistic Regression trained on Feature Store data at {datetime.utcnow().isoformat()}",
         sample_input_data=X.head()  # Good practice for signature inference
     )
     
-    return f"Success: Model {model_name} trained and registered."
+    logger.info(f"Model registered as {model_name} version {version_name}")
+    
+    return f"Success: Model {model_name} version {version_name} trained and registered."
 
 
 def inference_task(session: Session, feature_table: str, model_name: str, output_table: str) -> str:
@@ -237,7 +243,17 @@ def inference_task(session: Session, feature_table: str, model_name: str, output
     
     # Get model from registry
     reg = Registry(session=session)
-    model_ref = reg.get_model(model_name).version("v1_latest")
+    model = reg.get_model(model_name)
+    
+    # Get the latest version by sorting version names
+    versions = model.versions()
+    if not versions:
+        raise ValueError(f"No versions found for model {model_name}")
+    
+    # Get the most recent version (versions are sorted descending by creation)
+    latest_version = versions[0]
+    model_ref = latest_version
+    logger.info(f"Using model version: {latest_version.version_name}")
     
     # Run prediction
     result_df = model_ref.run(df_features, function_name="predict")
