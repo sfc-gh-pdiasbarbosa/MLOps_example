@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS DEV_RAW_DB.PUBLIC.MARKET_DATA (
 )
 COMMENT = 'DEV: Raw market price data with technical indicators';
 
+-- Enable change tracking for Feature Store (Dynamic Tables requirement)
+ALTER TABLE DEV_RAW_DB.PUBLIC.MARKET_DATA SET CHANGE_TRACKING = TRUE;
+
 -- Trading signals output table
 CREATE TABLE IF NOT EXISTS DEV_ML_DB.OUTPUT.TRADING_SIGNALS (
     ASSET_ID VARCHAR(20),

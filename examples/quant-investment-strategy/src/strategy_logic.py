@@ -457,11 +457,15 @@ def main(session: Session) -> str:
     db = session.get_current_database().strip('"')
     schema = session.get_current_schema().strip('"')
     
-    # Configuration (derived from current context)
-    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
+    env_prefix = db.split("_")[0]
+    
+    # Configuration
+    # Source table is in RAW_DB, features are in ML_DB
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
-    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    output_table = f"{db}.OUTPUT.TRADING_SIGNALS"
     
     # Run full pipeline
     result1 = feature_engineering_task(session, source_table, feature_view)
@@ -479,10 +483,13 @@ def main(session: Session) -> str:
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Technical Indicators stored procedure."""
     db = session.get_current_database().strip('"')
-    schema = session.get_current_schema().strip('"')
     
-    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
+    env_prefix = db.split("_")[0]
+    
+    # Source table is in RAW_DB, features are in ML_DB.FEATURES
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     
     return feature_engineering_task(session, source_table, feature_view)
 
@@ -490,9 +497,8 @@ def feature_engineering_main(session: Session) -> str:
 def strategy_registration_main(session: Session) -> str:
     """Entry point for Strategy Registration stored procedure."""
     db = session.get_current_database().strip('"')
-    schema = session.get_current_schema().strip('"')
     
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
     
     return strategy_registration_task(session, feature_view, strategy_name, "")
@@ -501,11 +507,10 @@ def strategy_registration_main(session: Session) -> str:
 def signal_generation_main(session: Session) -> str:
     """Entry point for Signal Generation stored procedure."""
     db = session.get_current_database().strip('"')
-    schema = session.get_current_schema().strip('"')
     
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
-    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    output_table = f"{db}.OUTPUT.TRADING_SIGNALS"
     
     return signal_generation_task(session, feature_view, strategy_name, output_table)
 
