@@ -587,3 +587,4 @@ def signal_generation_main(session: Session) -> str:
     
     return signal_generation_task(session, feature_view, strategy_name, output_table)
 
+# Trigger redeploy Thu Jan 15 14:06:54 AEDT 2026
