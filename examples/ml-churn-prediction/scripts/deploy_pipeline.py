@@ -168,6 +168,22 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
     
     # Register stored procedures if using sprocs mode
     if execution_mode == "sprocs":
+        print("\nClearing old staged files to force fresh upload...")
+        try:
+            session.sql(f"REMOVE {code_stage}").collect()
+            print("  ✅ Stage cleared")
+        except Exception as e:
+            print(f"  ⚠️ Stage clear warning: {e}")
+        
+        print("\nDropping existing procedures to force recreation...")
+        for task in tasks_config:
+            proc_name = f"{db_name}.{schema_name}.SP_{task['name']}"
+            try:
+                session.sql(f"DROP PROCEDURE IF EXISTS {proc_name}()").collect()
+                print(f"  ✅ Dropped: SP_{task['name']}")
+            except Exception as e:
+                print(f"  ⚠️ Drop warning for SP_{task['name']}: {e}")
+        
         print("\nRegistering stored procedures...")
         for task in tasks_config:
             session.sproc.register_from_file(
