@@ -612,3 +612,4 @@ def signal_generation_main(session: Session) -> str:
     output_table = f"{db}.OUTPUT.TRADING_SIGNALS"
     
     return signal_generation_task(session, feature_view, strategy_name, output_table)
+
