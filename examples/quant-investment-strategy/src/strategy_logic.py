@@ -314,7 +314,7 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     
     Args:
         session: Snowpark Session
-        feature_view_path: Path to feature data (for sample input)
+        feature_view_path: Path to feature data (DB.SCHEMA.FV_NAME format)
         model_name: Name for the strategy in registry
         stage_location: Stage for model artifacts
     
@@ -323,8 +323,29 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     """
     logger.info(f"Registering investment strategy as custom model: {model_name}")
     
-    # Load sample data for model signature
-    df_sample = session.table(feature_view_path).limit(10)
+    # Parse feature view path
+    parts = feature_view_path.split('.')
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = [p.strip('"') for p in parts]
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_view_path.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    
+    # Get sample data from Feature Store
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=warehouse,
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    # Get feature view and sample data
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_sample = fv.feature_df.limit(10)
     sample_pdf = df_sample.to_pandas()
     
     # Ensure required columns exist
@@ -342,19 +363,23 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     # Register in Model Registry
     reg = Registry(session=session)
     
+    # Generate timestamp-based version name to avoid conflicts
+    from datetime import datetime
+    version_name = f"v_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    
     # Log the custom model
     mv = reg.log_model(
         model=strategy,
         model_name=model_name,
-        version_name="v1_momentum",
+        version_name=version_name,
         conda_dependencies=["pandas", "numpy"],
-        comment="Momentum-based investment strategy (non-ML custom model)",
+        comment=f"Momentum-based investment strategy at {datetime.utcnow().isoformat()}",
         sample_input_data=sample_pdf[required_cols].head()
     )
     
-    logger.info(f"Strategy {model_name} registered successfully")
+    logger.info(f"Strategy {model_name} version {version_name} registered successfully")
     
-    return f"Success: Strategy {model_name} registered as custom model in registry"
+    return f"Success: Strategy {model_name} version {version_name} registered"
 
 
 def signal_generation_task(session: Session, feature_table: str, model_name: str, output_table: str) -> str:
@@ -366,7 +391,7 @@ def signal_generation_task(session: Session, feature_table: str, model_name: str
     
     Args:
         session: Snowpark Session
-        feature_table: Table with technical indicators
+        feature_table: Path to Feature View (DB.SCHEMA.FV_NAME format)
         model_name: Name of the strategy in registry
         output_table: Output table for trading signals
     
@@ -375,23 +400,49 @@ def signal_generation_task(session: Session, feature_table: str, model_name: str
     """
     logger.info(f"Generating trading signals using strategy {model_name}")
     
+    # Parse feature view path
+    parts = feature_table.split('.')
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = [p.strip('"') for p in parts]
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_table.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    
+    # Get features from Feature Store
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=warehouse,
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_features = fv.feature_df
+    
     # Load strategy from registry
     reg = Registry(session=session)
-    strategy_ref = reg.get_model(model_name).version("v1_momentum")
+    model = reg.get_model(model_name)
     
-    # Load feature data
-    df_features = session.table(feature_table)
+    # Get latest version
+    versions = model.versions()
+    if not versions:
+        raise ValueError(f"No versions found for strategy {model_name}")
+    strategy_ref = versions[0]
+    logger.info(f"Using strategy version: {strategy_ref.version_name}")
     
     # Run the strategy (this calls the predict method of our CustomModel)
     signals_df = strategy_ref.run(df_features, function_name="predict")
     
     # Add metadata
-    from datetime import datetime
     signals_df = signals_df.with_column("SIGNAL_TIMESTAMP", F.current_timestamp())
-    signals_df = signals_df.with_column("STRATEGY_VERSION", F.lit("v1_momentum"))
+    signals_df = signals_df.with_column("STRATEGY_VERSION", F.lit(strategy_ref.version_name))
     
     # Save signals
-    signals_df.write.mode("append").save_as_table(output_table)
+    signals_df.write.mode("overwrite").save_as_table(output_table)
     
     # Log summary
     signal_counts = signals_df.group_by("SIGNAL").count().collect()
