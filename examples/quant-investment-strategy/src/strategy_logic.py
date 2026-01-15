@@ -200,19 +200,22 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     """
     logger.info(f"Starting technical indicator calculation from {source_table}")
     
-    # Parse target location
+    # Parse target location - strip quotes from all values
     try:
         parts = target_fs_object.split('.')
         if len(parts) == 3:
-            db_name, schema_name, fv_name = parts
+            db_name, schema_name, fv_name = [p.strip('"') for p in parts]
         else:
-            db_name = session.get_current_database()
-            schema_name = session.get_current_schema()
-            fv_name = target_fs_object
+            db_name = session.get_current_database().strip('"')
+            schema_name = session.get_current_schema().strip('"')
+            fv_name = target_fs_object.strip('"')
     except Exception:
-        db_name = session.get_current_database()
-        schema_name = session.get_current_schema()
-        fv_name = target_fs_object
+        db_name = session.get_current_database().strip('"')
+        schema_name = session.get_current_schema().strip('"')
+        fv_name = target_fs_object.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    logger.info(f"Using database={db_name}, schema={schema_name}, warehouse={warehouse}")
     
     # Initialize Feature Store
     # Use CREATE_IF_NOT_EXIST to create Feature Store metadata if not present
@@ -220,7 +223,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         session=session,
         database=db_name,
         name=schema_name,
-        default_warehouse=session.get_current_warehouse(),
+        default_warehouse=warehouse,
         creation_mode=CreationMode.CREATE_IF_NOT_EXIST
     )
     
@@ -235,31 +238,50 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     logger.info(f"Entity {entity_name} registered.")
     
     # Read raw price data
+    logger.info(f"Reading source table: {source_table}")
     df_raw = session.table(source_table)
     
-    # Calculate technical indicators using Snowpark
-    # Note: In production, you'd use window functions for proper time-series calculations
-    # This is a simplified version for demonstration
+    # Log available columns for debugging
+    logger.info(f"Source table columns: {df_raw.columns}")
     
-    # For this example, we assume the source table already has some preprocessed data
-    # In a real scenario, you would calculate these using window functions:
-    #
-    # df_features = df_raw.with_column(
-    #     "MA_20", 
-    #     F.avg("CLOSE_PRICE").over(Window.partition_by("ASSET_ID").order_by("DATE").rows_between(-19, 0))
-    # )
+    # Build feature DataFrame - only select columns that exist
+    # Use uppercase column names (Snowflake default)
+    available_cols = [c.upper() for c in df_raw.columns]
     
-    # Simplified: assume source has pre-calculated indicators or use SQL UDFs
-    df_features = df_raw.select(
+    # Start with required columns
+    select_cols = [
         F.col("ASSET_ID"),
         F.col("DATE"),
-        F.col("CLOSE_PRICE").alias("CURRENT_PRICE"),
-        F.coalesce(F.col("RSI_14"), F.lit(50.0)).alias("RSI_14"),
-        F.coalesce(F.col("MA_20"), F.col("CLOSE_PRICE")).alias("MA_20"),
-        F.coalesce(F.col("MA_50"), F.col("CLOSE_PRICE")).alias("MA_50"),
-        F.coalesce(F.col("VOLUME"), F.lit(0)).alias("VOLUME"),
-        F.coalesce(F.col("VOLATILITY_20"), F.lit(0.0)).alias("VOLATILITY_20")
-    )
+        F.col("CLOSE_PRICE").alias("CURRENT_PRICE")
+    ]
+    
+    # Add optional columns with defaults if they don't exist
+    if "RSI_14" in available_cols:
+        select_cols.append(F.coalesce(F.col("RSI_14"), F.lit(50.0)).alias("RSI_14"))
+    else:
+        select_cols.append(F.lit(50.0).alias("RSI_14"))
+        
+    if "MA_20" in available_cols:
+        select_cols.append(F.coalesce(F.col("MA_20"), F.col("CLOSE_PRICE")).alias("MA_20"))
+    else:
+        select_cols.append(F.col("CLOSE_PRICE").alias("MA_20"))
+        
+    if "MA_50" in available_cols:
+        select_cols.append(F.coalesce(F.col("MA_50"), F.col("CLOSE_PRICE")).alias("MA_50"))
+    else:
+        select_cols.append(F.col("CLOSE_PRICE").alias("MA_50"))
+        
+    if "VOLUME" in available_cols:
+        select_cols.append(F.coalesce(F.col("VOLUME"), F.lit(0)).alias("VOLUME"))
+    else:
+        select_cols.append(F.lit(0).alias("VOLUME"))
+        
+    if "VOLATILITY_20" in available_cols:
+        select_cols.append(F.coalesce(F.col("VOLATILITY_20"), F.lit(0.0)).alias("VOLATILITY_20"))
+    else:
+        select_cols.append(F.lit(0.0).alias("VOLATILITY_20"))
+    
+    df_features = df_raw.select(*select_cols)
     
     # Create Feature View
     fv = FeatureView(
