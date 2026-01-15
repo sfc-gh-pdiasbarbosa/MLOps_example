@@ -527,8 +527,13 @@ def main(session: Session) -> str:
     Default main function - runs the full pipeline sequentially.
     Useful for ML Jobs mode where a single job runs everything.
     """
-    db = session.get_current_database().strip('"')
-    schema = session.get_current_schema().strip('"')
+    # Get database - handle None case
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
     env_prefix = db.split("_")[0]
@@ -555,7 +560,16 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Technical Indicators stored procedure."""
-    db = session.get_current_database().strip('"')
+    # Get database - handle None case by querying session
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        # Fallback: query the database from session
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
+    
+    logger.info(f"Running feature_engineering_main with database: {db}")
     
     # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
     env_prefix = db.split("_")[0]
@@ -564,12 +578,19 @@ def feature_engineering_main(session: Session) -> str:
     source_table = f"{env_prefix}_RAW_DB.PUBLIC.MARKET_DATA"
     feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     
+    logger.info(f"Source: {source_table}, Feature View: {feature_view}")
+    
     return feature_engineering_task(session, source_table, feature_view)
 
 
 def strategy_registration_main(session: Session) -> str:
     """Entry point for Strategy Registration stored procedure."""
-    db = session.get_current_database().strip('"')
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
@@ -579,7 +600,12 @@ def strategy_registration_main(session: Session) -> str:
 
 def signal_generation_main(session: Session) -> str:
     """Entry point for Signal Generation stored procedure."""
-    db = session.get_current_database().strip('"')
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"

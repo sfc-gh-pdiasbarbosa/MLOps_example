@@ -303,8 +303,13 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Feature Engineering stored procedure."""
-    # Get current database and strip any quotes
-    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
+    # Get current database - handle None case
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     # Derive environment prefix from current database
     env_prefix = db.split("_")[0]  # DEV_ML_DB -> DEV
@@ -318,7 +323,12 @@ def feature_engineering_main(session: Session) -> str:
 
 def model_training_main(session: Session) -> str:
     """Entry point for Model Training stored procedure."""
-    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     # Features are in FEATURES schema
     feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
@@ -329,7 +339,12 @@ def model_training_main(session: Session) -> str:
 
 def inference_main(session: Session) -> str:
     """Entry point for Inference stored procedure."""
-    db = session.get_current_database().strip('"')  # e.g., DEV_ML_DB
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
     # Features from FEATURES schema, output to OUTPUT schema
     feature_view = f"{db}.FEATURES.CUSTOMER_FEATURES"
