@@ -8,8 +8,9 @@ It supports two execution modes:
 
 Pipeline Tasks:
 1. Feature Engineering - Updates Feature Store
-2. Model Training - Retrains and registers model
+2. Model Training - Retrains XGBoost model and registers with metrics
 3. Batch Inference - Runs predictions
+4. Monitor Setup - Creates/updates Model Monitor for drift tracking
 
 Usage:
     python deploy_pipeline.py <ENV_NAME> [--mode sprocs|mljobs]
@@ -153,12 +154,18 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
             "name": "TASK_MODEL_TRAINING",
             "file": ml_logic_path,
             "func_name": "model_training_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "scikit-learn", "snowflake-ml-python"]
+            "packages": ["snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"]
         },
         {
             "name": "TASK_INFERENCE",
             "file": ml_logic_path,
             "func_name": "inference_main",
+            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+        },
+        {
+            "name": "TASK_MONITOR_SETUP",
+            "file": ml_logic_path,
+            "func_name": "monitor_setup_main",
             "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
         }
     ]
@@ -211,7 +218,7 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
         stage_location=code_stage,
         schedule=Cron("0 2 * * *", "UTC"),  # Daily at 2 AM UTC
         warehouse=wh_name,
-        packages=["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+        packages=["snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"]
     ) as dag:
         dag_tasks = []
         
@@ -237,7 +244,7 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
             )
             dag_tasks.append(dag_task)
         
-        # Chain tasks: FE >> Training >> Inference
+        # Chain tasks: FE >> Training >> Inference >> Monitor Setup
         for i in range(len(dag_tasks) - 1):
             dag_tasks[i] >> dag_tasks[i + 1]
     
