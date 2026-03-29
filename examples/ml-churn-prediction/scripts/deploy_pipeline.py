@@ -143,30 +143,36 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
     src_dir = os.path.join(os.path.dirname(__file__), '..', 'src')
     ml_logic_path = os.path.join(src_dir, 'ml_logic.py')
     
+    # All tasks share ml_logic.py which has top-level imports for xgboost/sklearn,
+    # so every task needs the full package list for compilation to succeed.
+    common_packages = [
+        "snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"
+    ]
+
     tasks_config = [
         {
             "name": "TASK_FEATURE_ENGINEERING",
             "file": ml_logic_path,
             "func_name": "feature_engineering_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+            "packages": common_packages
         },
         {
             "name": "TASK_MODEL_TRAINING",
             "file": ml_logic_path,
             "func_name": "model_training_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"]
+            "packages": common_packages
         },
         {
             "name": "TASK_INFERENCE",
             "file": ml_logic_path,
             "func_name": "inference_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+            "packages": common_packages
         },
         {
             "name": "TASK_MONITOR_SETUP",
             "file": ml_logic_path,
             "func_name": "monitor_setup_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+            "packages": common_packages
         }
     ]
     
