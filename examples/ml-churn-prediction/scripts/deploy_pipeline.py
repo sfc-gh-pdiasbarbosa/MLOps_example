@@ -254,6 +254,14 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
         for i in range(len(dag_tasks) - 1):
             dag_tasks[i] >> dag_tasks[i + 1]
     
+    # Drop existing DAG before redeploying (orreplace can conflict with existing root task)
+    print("\nDropping existing DAG if present...")
+    try:
+        dag_op.delete(dag_name)
+        print(f"  ✅ Dropped existing DAG '{dag_name}'")
+    except Exception:
+        print(f"  No existing DAG to drop (first deployment)")
+
     # Deploy the DAG
     print("\nDeploying DAG to Snowflake...")
     dag_op.deploy(dag, mode="orreplace")
