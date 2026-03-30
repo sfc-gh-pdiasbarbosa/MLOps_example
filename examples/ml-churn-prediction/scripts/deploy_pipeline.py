@@ -8,8 +8,9 @@ It supports two execution modes:
 
 Pipeline Tasks:
 1. Feature Engineering - Updates Feature Store
-2. Model Training - Retrains and registers model
+2. Model Training - Retrains XGBoost model and registers with metrics
 3. Batch Inference - Runs predictions
+4. Monitor Setup - Creates/updates Model Monitor for drift tracking
 
 Usage:
     python deploy_pipeline.py <ENV_NAME> [--mode sprocs|mljobs]
@@ -142,32 +143,63 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
     src_dir = os.path.join(os.path.dirname(__file__), '..', 'src')
     ml_logic_path = os.path.join(src_dir, 'ml_logic.py')
     
+    # All tasks share ml_logic.py which has top-level imports for xgboost/sklearn,
+    # so every task needs the full package list for compilation to succeed.
+    common_packages = [
+        "snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"
+    ]
+
     tasks_config = [
         {
             "name": "TASK_FEATURE_ENGINEERING",
             "file": ml_logic_path,
             "func_name": "feature_engineering_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+            "packages": common_packages
         },
         {
             "name": "TASK_MODEL_TRAINING",
             "file": ml_logic_path,
             "func_name": "model_training_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "scikit-learn", "snowflake-ml-python"]
+            "packages": common_packages
         },
         {
             "name": "TASK_INFERENCE",
             "file": ml_logic_path,
             "func_name": "inference_main",
-            "packages": ["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+            "packages": common_packages
+        },
+        {
+            "name": "TASK_MONITOR_SETUP",
+            "file": ml_logic_path,
+            "func_name": "monitor_setup_main",
+            "packages": common_packages
         }
     ]
     
     # Common imports for all tasks
-    imports = [ml_logic_path]
+    # Note: do NOT include ml_logic_path here -- it is the procedure source file
+    # and is automatically staged by register_from_file. Adding it to imports
+    # causes duplicate uploads and stage reference conflicts.
+    imports = []
     
     # Register stored procedures if using sprocs mode
     if execution_mode == "sprocs":
+        print("\nClearing old staged files to force fresh upload...")
+        try:
+            session.sql(f"REMOVE {code_stage}").collect()
+            print("  ✅ Stage cleared")
+        except Exception as e:
+            print(f"  ⚠️ Stage clear warning: {e}")
+        
+        print("\nDropping existing procedures to force recreation...")
+        for task in tasks_config:
+            proc_name = f"{db_name}.{schema_name}.SP_{task['name']}"
+            try:
+                session.sql(f"DROP PROCEDURE IF EXISTS {proc_name}()").collect()
+                print(f"  ✅ Dropped: SP_{task['name']}")
+            except Exception as e:
+                print(f"  ⚠️ Drop warning for SP_{task['name']}: {e}")
+        
         print("\nRegistering stored procedures...")
         for task in tasks_config:
             session.sproc.register_from_file(
@@ -178,8 +210,7 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
                 stage_location=code_stage,
                 packages=task["packages"],
                 replace=True,
-                execute_as="caller",
-                imports=imports
+                execute_as="caller"
             )
             print(f"  ✅ Registered: SP_{task['name']}")
     
@@ -195,7 +226,7 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
         stage_location=code_stage,
         schedule=Cron("0 2 * * *", "UTC"),  # Daily at 2 AM UTC
         warehouse=wh_name,
-        packages=["snowflake-snowpark-python", "pandas", "snowflake-ml-python"]
+        packages=["snowflake-snowpark-python", "pandas", "scikit-learn", "xgboost", "snowflake-ml-python"]
     ) as dag:
         dag_tasks = []
         
@@ -221,10 +252,18 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
             )
             dag_tasks.append(dag_task)
         
-        # Chain tasks: FE >> Training >> Inference
+        # Chain tasks: FE >> Training >> Inference >> Monitor Setup
         for i in range(len(dag_tasks) - 1):
             dag_tasks[i] >> dag_tasks[i + 1]
     
+    # Drop existing DAG before redeploying (orreplace can conflict with existing root task)
+    print("\nDropping existing DAG if present...")
+    try:
+        dag_op.delete(dag_name)
+        print(f"  ✅ Dropped existing DAG '{dag_name}'")
+    except Exception:
+        print(f"  No existing DAG to drop (first deployment)")
+
     # Deploy the DAG
     print("\nDeploying DAG to Snowflake...")
     dag_op.deploy(dag, mode="orreplace")

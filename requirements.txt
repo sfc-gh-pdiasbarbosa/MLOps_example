@@ -5,4 +5,5 @@ cryptography
 pyyaml
 pandas
 scikit-learn
+xgboost
 pytest

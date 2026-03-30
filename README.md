@@ -1,304 +1,173 @@
-# Model Operations Examples for Snowflake
+# Snowflake ML Platform - End-to-End MLOps Demo
 
-A comprehensive repository demonstrating best practices for deploying and managing both **ML and non-ML models** on Snowflake using Feature Store, Model Registry, DAGs, and GitHub Actions CI/CD.
+A comprehensive, hands-on demonstration of Snowflake's complete ML platform capabilities covering every stage of the ML lifecycle: from data preparation and feature engineering through model training, registry, monitoring, explainability, lineage, serving, and distributed training.
 
-## 🎯 Key Insight
+## ML Lifecycle Coverage
 
-> **Snowflake's ML platform isn't just for Machine Learning** — it's a complete model management platform that works with any Python-based logic, whether learned from data or based on deterministic rules.
+| MLOps Stage | Snowflake Feature | Demo Notebook |
+|---|---|---|
+| Development Environment | Snowflake Notebooks on Container Runtime | All notebooks |
+| Data Loading | DataConnector API | `00_data_setup` |
+| Feature Engineering | Feature Store (Entity, FeatureView, Dynamic Tables) | `01_feature_engineering` |
+| Model Training (Classical) | XGBoost / scikit-learn on Container Runtime | `02_model_training_xgboost` |
+| Hyperparameter Tuning | Distributed GridSearchCV | `03_hyperparameter_tuning` |
+| Model Registry | Versioning, Metrics, Tags, RBAC, Artifacts | `04_model_registry` |
+| Batch Inference | `model_version.run()` on warehouse | `05_batch_inference` |
+| ML Observability | Model Monitor (drift, performance) | `06_model_monitoring` |
+| Explainability | SHAP via `model_version.run(function_name="explain")` | `07_explainability_lineage` |
+| ML Lineage | End-to-end lineage (data > features > model) | `07_explainability_lineage` |
+| Real-Time Serving | Model Serving on SPCS (REST API) | `08_model_serving` |
+| Distributed Training | PyTorchDistributor, XGBEstimator | `09_distributed_training` |
+| Orchestration | Snowflake Tasks / DAGs | `examples/ml-churn-prediction/` |
+| CI/CD | GitHub Actions with environment promotion | `.github/workflows/` |
 
-This repository proves it with two complete examples:
-
-| Example | Model Type | Use Case |
-|---------|------------|----------|
-| [ML Churn Prediction](./examples/ml-churn-prediction/) | sklearn LogisticRegression | Customer churn prediction |
-| [Investment Strategy](./examples/quant-investment-strategy/) | **Custom Python (non-ML)** | Momentum trading signals |
-
-## 🏗 Architecture
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                        GitHub Repository                          │
-│  ┌──────────────┐  ┌──────────────┐   ┌──────────────┐ ┌────────┐ │
-│  │ feature/**   │  │ development  │   │  release/**  │ │ main   │ │
-│  │   branches   │  │   branch     │   │   branches   │ │ branch │ │
-│  └──────┬───────┘  └──────┬───────┘   └──────┬───────┘ └───┬────┘ │
-└─────────┼─────────────────┼──────────────────┼─────────────┼──────┘
-          │                 │                  │             │
-          ▼                 ▼                  ▼             ▼
-    ┌─────────┐        ┌─────────┐       ┌─────────┐    ┌─────────┐
-    │   DEV   │───────▶│   SIT   │──────▶│   UAT   │───▶│   PRD   │
-    │ (XS WH) │        │  (S WH) │       │  (M WH) │    │  (L WH) │
-    └─────────┘        └─────────┘       └─────────┘    └─────────┘
-    Auto Deploy        Auto Deploy       Auto Deploy    Manual Approval
-```
-
-### Shared Infrastructure, Different Logic
-
-Both examples use the **same Snowflake features**:
-
-| Feature | ML Example | Non-ML Example |
-|---------|------------|----------------|
-| **Feature Store** | Customer behavior features | Technical indicators |
-| **Model Registry** | sklearn model | CustomModel class |
-| **DAG Tasks** | Train → Infer | Register → Execute |
-| **CI/CD** | Same GitHub Actions | Same patterns |
-
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 .
+├── notebooks/                              # Interactive demo notebooks (run in SnowSight)
+│   ├── 00_data_setup.ipynb                 # Data loading and exploration
+│   ├── 01_feature_engineering.ipynb        # Feature Store deep dive
+│   ├── 02_model_training_xgboost.ipynb     # XGBoost training with metrics
+│   ├── 03_hyperparameter_tuning.ipynb      # Distributed GridSearchCV
+│   ├── 04_model_registry.ipynb             # Model Registry capabilities
+│   ├── 05_batch_inference.ipynb            # Batch predictions
+│   ├── 06_model_monitoring.ipynb           # Drift and performance monitoring
+│   ├── 07_explainability_lineage.ipynb     # SHAP values and ML lineage
+│   ├── 08_model_serving.ipynb              # REST API deployment on SPCS
+│   └── 09_distributed_training.ipynb       # Multi-node GPU training
+│
 ├── examples/
-│   ├── ml-churn-prediction/           # Traditional ML example
-│   │   ├── src/ml_logic.py            # sklearn-based pipeline
-│   │   ├── scripts/deploy_pipeline.py
-│   │   ├── config/environments.yml
+│   ├── ml-churn-prediction/                # Production ML pipeline
+│   │   ├── src/ml_logic.py                 # XGBoost pipeline (4 tasks)
+│   │   ├── scripts/deploy_pipeline.py      # DAG deployment script
+│   │   ├── config/environments.yml         # DEV/SIT/UAT/PRD config
 │   │   └── README.md
-│   │
-│   └── quant-investment-strategy/     # Non-ML custom model example
-│       ├── src/strategy_logic.py      # Rule-based strategy (pandas/numpy)
+│   └── quant-investment-strategy/          # Non-ML CustomModel example
+│       ├── src/strategy_logic.py
 │       ├── scripts/deploy_pipeline.py
-│       ├── config/environments.yml
 │       └── README.md
 │
-├── sql/                               # Shared SQL setup scripts
+├── sql/                                    # Infrastructure setup scripts
 │   ├── 00_setup_warehouses.sql
 │   ├── 01_setup_dev_environment.sql
 │   ├── 02_setup_sit_environment.sql
 │   ├── 02b_setup_uat_environment.sql
 │   ├── 03_setup_prd_environment.sql
 │   ├── 04_setup_roles_and_grants.sql
-│   ├── 05_setup_market_data_tables.sql  # For investment strategy
-│   ├── 99_setup_all_environments.sql
-│   └── README.md
+│   ├── 07_setup_monitoring.sql             # Monitoring schemas and grants
+│   └── 08_setup_compute_pool.sql           # CPU/GPU compute pools
 │
 ├── docs/
-│   ├── ML_VS_CUSTOM_MODELS.md         # Comparison guide
-│   └── BRANCH_PROTECTION.md           # Security setup guide
+│   ├── DEMO_GUIDE.md                       # Step-by-step demo delivery guide
+│   ├── SNOWFLAKE_ML_FEATURE_MAP.md         # Complete feature mapping reference
+│   └── ML_VS_CUSTOM_MODELS.md              # ML vs CustomModel comparison
 │
-├── .github/
-│   ├── workflows/
-│   │   ├── ml_churn_deploy.yml        # ML pipeline CI/CD
-│   │   └── quant_strategy_deploy.yml  # Strategy pipeline CI/CD
-│   └── actionlint.yaml
+├── .github/workflows/                      # CI/CD pipelines
+│   ├── ml_churn_deploy.yml
+│   └── quant_strategy_deploy.yml
 │
 ├── requirements.txt
-└── README.md                          # This file
+└── README.md
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Snowflake account with ACCOUNTADMIN access
-- GitHub repository with Actions enabled
-- Python 3.12+
+- Snowflake account with ACCOUNTADMIN access (for initial setup)
+- Snowflake Notebooks enabled (Container Runtime)
+- Python 3.11+ (for local development only)
 
-### Step 1: Setup Snowflake Infrastructure
+### Step 1: Run SQL Setup Scripts
 
-```bash
-# Run SQL scripts in order (in Snowsight)
-sql/00_setup_warehouses.sql
-sql/01_setup_dev_environment.sql
-sql/02_setup_sit_environment.sql
-sql/02b_setup_uat_environment.sql
-sql/03_setup_prd_environment.sql
-sql/04_setup_roles_and_grants.sql
-sql/05_setup_market_data_tables.sql  # For investment strategy example
-sql/06_setup_network_policy.sql      # For GitHub Actions access
+Execute these scripts in SnowSight SQL Worksheets in order:
+
+```
+sql/00_setup_warehouses.sql          -- Creates warehouses (XS through L)
+sql/01_setup_dev_environment.sql     -- DEV databases and schemas
+sql/04_setup_roles_and_grants.sql    -- ML roles and permissions
+sql/07_setup_monitoring.sql          -- Monitoring schemas + lineage grants
+sql/08_setup_compute_pool.sql        -- CPU/GPU compute pools
 ```
 
-Or use the all-in-one script: `sql/99_setup_all_environments.sql`
-
-> ⚠️ **Network Policy Required**: If your Snowflake account has network policies enabled, you MUST run `06_setup_network_policy.sql` or GitHub Actions will be blocked with error: `IP is not allowed to access Snowflake`
-
-### Step 2: Create Snowflake Service Account
+### Step 2: Create Demo Database
 
 ```sql
--- Generate key pair locally first:
--- openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out snowflake_key.p8 -nocrypt
--- openssl rsa -in snowflake_key.p8 -pubout -out snowflake_key.pub
+CREATE DATABASE IF NOT EXISTS MLOPS_DEMO_DB;
+CREATE SCHEMA IF NOT EXISTS MLOPS_DEMO_DB.RAW;
+CREATE SCHEMA IF NOT EXISTS MLOPS_DEMO_DB.FEATURES;
+CREATE SCHEMA IF NOT EXISTS MLOPS_DEMO_DB.PIPELINES;
+CREATE SCHEMA IF NOT EXISTS MLOPS_DEMO_DB.OUTPUT;
+CREATE SCHEMA IF NOT EXISTS MLOPS_DEMO_DB.MONITORING;
 
-USE ROLE ACCOUNTADMIN;
-
-CREATE USER IF NOT EXISTS github_actions_user
-    RSA_PUBLIC_KEY = '<paste content of snowflake_key.pub>'
-    DEFAULT_ROLE = ML_CICD_ROLE
-    MUST_CHANGE_PASSWORD = FALSE
-    COMMENT = 'Service account for GitHub Actions CI/CD';
-
-GRANT ROLE ML_CICD_ROLE TO USER github_actions_user;
+CREATE WAREHOUSE IF NOT EXISTS MLOPS_DEMO_WH
+    WAREHOUSE_SIZE = 'MEDIUM'
+    AUTO_SUSPEND = 300
+    AUTO_RESUME = TRUE;
 ```
 
-### Step 3: Configure GitHub Secrets
+### Step 3: Upload and Run Notebooks
 
-Go to **Settings → Secrets and variables → Actions** and add:
+1. In SnowSight, navigate to **Projects > Notebooks**
+2. Click **Import .ipynb file**
+3. Upload notebooks in order (00 through 09)
+4. Select **MLOPS_DEMO_DB** as the database and **MLOPS_DEMO_WH** as the warehouse
+5. Run each notebook sequentially -- each builds on the previous one's outputs
 
-| Secret Name | Value | Format |
-|-------------|-------|--------|
-| `SNOWFLAKE_ACCOUNT` | Your account identifier | `orgname-accountname` or `xy12345.us-east-1` |
-| `SNOWFLAKE_USER` | Service account username | `github_actions_user` |
-| `SNOWFLAKE_PRIVATE_KEY` | Private key content | Full PEM including `-----BEGIN/END-----` |
-| `SNOWFLAKE_ROLE` | Fallback role | `ML_CICD_ROLE` |
+## Notebooks Overview
 
-#### Finding Your Account Identifier
+| # | Notebook | What It Demonstrates | Key SnowSight View |
+|---|----------|---------------------|-------------------|
+| 00 | Data Setup | Synthetic data generation, EDA | Data > Databases > MLOPS_DEMO_DB > RAW |
+| 01 | Feature Engineering | Entity, FeatureView, Dynamic Tables, point-in-time lookups | AI/ML > Feature Store |
+| 02 | Model Training | XGBoost training, metric logging to registry | AI/ML > Model Registry |
+| 03 | HPO | Distributed GridSearchCV, multi-version comparison | AI/ML > Model Registry (multiple versions) |
+| 04 | Model Registry | Version management, tags, RBAC, artifacts | AI/ML > Model Registry > Model > Versions |
+| 05 | Batch Inference | model_version.run(), prediction storage | Data > OUTPUT schema |
+| 06 | Monitoring | CREATE MODEL MONITOR, drift (PSI), performance (F1) | Model Registry > Monitors tab |
+| 07 | Explainability + Lineage | SHAP values, lineage graph traversal | Model Registry > Lineage tab |
+| 08 | Model Serving | SPCS deployment, REST API endpoints | Model Registry > Deploy tab |
+| 09 | Distributed Training | PyTorchDistributor, XGBEstimator, ML Jobs | Admin > Compute Pools |
 
-1. Log into Snowsight
-2. Look at URL: `https://app.snowflake.com/ORGNAME/ACCOUNTNAME/`
-3. Your account = `ORGNAME-ACCOUNTNAME`
+## Production Pipeline
 
-Or run in Snowflake:
-```sql
-SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();
-```
-
-#### ⚠️ Common Mistakes
-
-| ❌ Wrong | ✅ Correct |
-|----------|-----------|
-| `myorg-myaccount.snowflakecomputing.com` | `myorg-myaccount` |
-| `https://myorg-myaccount.snowflakecomputing.com` | `myorg-myaccount` |
-| Encrypted private key (has passphrase) | Unencrypted key (`-nocrypt` flag) |
-
-#### Optional: Environment-Specific Roles
-
-For more granular access control, add these additional secrets:
+The `examples/ml-churn-prediction/` directory contains a production-ready pipeline with 4 chained tasks:
 
 ```
-SNOWFLAKE_DEV_ROLE: ML_DEV_ROLE
-SNOWFLAKE_SIT_ROLE: ML_SIT_ROLE
-SNOWFLAKE_UAT_ROLE: ML_UAT_ROLE
-SNOWFLAKE_PRD_ROLE: ML_PRD_ROLE
+Feature Engineering >> Model Training >> Batch Inference >> Monitor Setup
 ```
 
-If not set, the workflow falls back to `SNOWFLAKE_ROLE`.
+- **Model**: XGBoost classifier for customer churn prediction
+- **Orchestration**: Snowflake DAG Tasks with daily cron schedule
+- **Deployment**: `deploy_pipeline.py` registers stored procedures and builds the DAG
+- **CI/CD**: GitHub Actions with branch-to-environment mapping (feature/* > DEV, development > SIT, release/* > UAT, main > PRD)
 
-### Step 4: Deploy an Example
+## Framework Compatibility
 
-```bash
-# Clone and create a feature branch
-git checkout -b feature/test-deployment
+| ML Framework | Training | Registry | Distributed | GPU |
+|---|---|---|---|---|
+| scikit-learn | Yes | Native | Via HPO | N/A |
+| XGBoost | Yes | Native | XGBEstimator | Yes |
+| LightGBM | Yes | Native | LightGBMEstimator | Yes |
+| PyTorch | Yes | Native | PyTorchDistributor | Yes |
+| TensorFlow / Keras | Yes | Native | Yes | Yes |
+| Hugging Face | Yes | Native | Yes | Yes |
+| Custom Python | Yes | CustomModel | Manual | Yes |
 
-# Make changes to either example
-# Push to trigger CI/CD
-git push origin feature/test-deployment
-```
+## Demo Delivery
 
-## 📊 Example Comparison
+For step-by-step demo instructions (including talking points and SnowSight navigation), see **[docs/DEMO_GUIDE.md](./docs/DEMO_GUIDE.md)**.
 
-### ML Example: Customer Churn Prediction
+For the complete MLOps-to-Snowflake feature mapping, see **[docs/SNOWFLAKE_ML_FEATURE_MAP.md](./docs/SNOWFLAKE_ML_FEATURE_MAP.md)**.
 
-| Aspect | Details |
-|--------|---------|
-| **Model** | `sklearn.linear_model.LogisticRegression` |
-| **Training** | ✅ Learns from historical customer data |
-| **Output** | Churn probability (0-1) |
-| **Refresh** | Daily (retrain on new data) |
+## Resources
 
-**Pipeline Flow:**
-```
-Raw Customers → Feature Engineering → Model Training → Batch Inference
-```
-
-### Non-ML Example: Momentum Investment Strategy
-
-| Aspect | Details |
-|--------|---------|
-| **Model** | `custom_model.CustomModel` subclass |
-| **Training** | ❌ No training (rule-based) |
-| **Output** | Trading signals (BUY/SELL/HOLD) |
-| **Refresh** | Hourly (apply rules to new data) |
-
-**Pipeline Flow:**
-```
-Market Data → Technical Indicators → Strategy Registration → Signal Generation
-```
-
-## 💡 Why This Matters
-
-Many organizations have models that aren't traditional ML:
-
-- **Quantitative Finance**: Trading strategies, risk models
-- **Insurance**: Actuarial calculations, pricing rules
-- **Retail**: Pricing engines, markdown optimization
-- **Healthcare**: Clinical decision rules, dosage calculations
-- **Manufacturing**: Quality control rules, optimization algorithms
-
-**These all benefit from:**
-- Version control ✅
-- Audit trails ✅
-- Environment promotion ✅
-- Governance ✅
-
-Snowflake's Model Registry handles all of these through the `CustomModel` class.
-
-## 🔄 Branching Strategy
-
-| Branch | Environment | Approval | DAG State |
-|--------|-------------|----------|-----------|
-| `feature/**` | DEV | Auto | Suspended |
-| `development` | SIT | Auto | Suspended |
-| `release/**` | UAT | Auto | Suspended |
-| `main` | PRD | **Manual** | Active |
-
-See [Branch Protection Guide](./docs/BRANCH_PROTECTION.md) for setup.
-
-## 🧪 Environment Details
-
-| Environment | Warehouse | Purpose | Data |
-|-------------|-----------|---------|------|
-| DEV | XS | Development | Sample |
-| SIT | Small | Integration | Sample |
-| UAT | Medium | Pre-production | Production-like |
-| PRD | Large | Production | Real |
-
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [ML vs Custom Models](./docs/ML_VS_CUSTOM_MODELS.md) | When to use each approach |
-| [Branch Protection](./docs/BRANCH_PROTECTION.md) | Security setup guide |
-| [SQL Setup](./sql/README.md) | Infrastructure scripts |
-| [ML Example README](./examples/ml-churn-prediction/README.md) | Churn prediction details |
-| [Strategy Example README](./examples/quant-investment-strategy/README.md) | Investment strategy details |
-
-## ⚠️ Limitations & Recommendations
-
-This is an **example repository** for learning. For production, consider:
-
-### 🔴 Critical Gaps
-
-1. **No Automated Testing** - Add pytest, data validation
-2. **No Model Validation Gates** - Add performance thresholds
-3. **Limited Monitoring** - Add drift detection, alerting
-4. **No Rollback Strategy** - Implement blue-green deployments
-
-### 🟡 Enhancements
-
-5. **Basic Error Handling** - Add retries, dead letter queues
-6. **Simplified Logic** - Production needs more robust calculations
-7. **Single Model Architecture** - Consider ensembles, A/B testing
-8. **Security Hardening** - Secrets rotation, audit logging
-
-See the [full recommendations list](#) in each example's README.
-
-## 🔗 Resources
-
-### Snowflake Documentation
-- [Model Registry](https://docs.snowflake.com/en/developer-guide/snowpark-ml/model-registry/overview)
-- [Custom Models](https://docs.snowflake.com/en/developer-guide/snowpark-ml/model-registry/custom-models)
+- [Snowflake ML Overview](https://docs.snowflake.com/en/developer-guide/snowflake-ml/overview)
 - [Feature Store](https://docs.snowflake.com/en/developer-guide/snowpark-ml/feature-store/overview)
-- [DAG Tasks](https://docs.snowflake.com/en/user-guide/tasks-intro)
-
-### GitHub Actions
-- [Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
-- [Branch Protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/about-protected-branches)
-
-## 🎉 Key Takeaway
-
-> Whether you're deploying a neural network or a pricing formula, Snowflake's ML platform provides the same governance, versioning, and operational capabilities. **It's not just for ML — it's for all your models.**
-
----
-
-**Version**: 2.0  
-**Last Updated**: 2025-01-07  
-**Examples**: ML (sklearn) + Non-ML (CustomModel)
+- [Model Registry](https://docs.snowflake.com/en/developer-guide/snowpark-ml/model-registry/overview)
+- [ML Observability](https://docs.snowflake.com/en/developer-guide/snowflake-ml/model-registry/model-observability)
+- [ML Lineage](https://docs.snowflake.com/en/developer-guide/snowflake-ml/ml-lineage)
+- [Container Runtime](https://docs.snowflake.com/en/developer-guide/snowflake-ml/container-runtime-ml)
+- [Distributed Training](https://docs.snowflake.com/en/developer-guide/snowflake-ml/distributed-training)
+- [End-to-End ML Workflow Quickstart](https://www.snowflake.com/en/developers/guides/end-to-end-ml-workflow/)

@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS DEV_RAW_DB.PUBLIC.MARKET_DATA (
 )
 COMMENT = 'DEV: Raw market price data with technical indicators';
 
+-- Enable change tracking for Feature Store (Dynamic Tables requirement)
+ALTER TABLE DEV_RAW_DB.PUBLIC.MARKET_DATA SET CHANGE_TRACKING = TRUE;
+
 -- Trading signals output table
 CREATE TABLE IF NOT EXISTS DEV_ML_DB.OUTPUT.TRADING_SIGNALS (
     ASSET_ID VARCHAR(20),
@@ -111,6 +114,9 @@ CREATE TABLE IF NOT EXISTS SIT_RAW_DB.PUBLIC.MARKET_DATA (
 )
 COMMENT = 'SIT: Raw market price data with technical indicators';
 
+-- Enable change tracking for Feature Store (Dynamic Tables requirement)
+ALTER TABLE SIT_RAW_DB.PUBLIC.MARKET_DATA SET CHANGE_TRACKING = TRUE;
+
 CREATE TABLE IF NOT EXISTS SIT_ML_DB.OUTPUT.TRADING_SIGNALS (
     ASSET_ID VARCHAR(20),
     SIGNAL VARCHAR(10),
@@ -158,6 +164,9 @@ CREATE TABLE IF NOT EXISTS UAT_RAW_DB.PUBLIC.MARKET_DATA (
     PRIMARY KEY (ASSET_ID, DATE)
 )
 COMMENT = 'UAT: Raw market price data with technical indicators';
+
+-- Enable change tracking for Feature Store (Dynamic Tables requirement)
+ALTER TABLE UAT_RAW_DB.PUBLIC.MARKET_DATA SET CHANGE_TRACKING = TRUE;
 
 CREATE TABLE IF NOT EXISTS UAT_ML_DB.OUTPUT.TRADING_SIGNALS (
     ASSET_ID VARCHAR(20),
@@ -207,6 +216,9 @@ CREATE TABLE IF NOT EXISTS PRD_RAW_DB.PUBLIC.MARKET_DATA (
 )
 DATA_RETENTION_TIME_IN_DAYS = 90
 COMMENT = 'PRD: Raw market price data with technical indicators';
+
+-- Enable change tracking for Feature Store (Dynamic Tables requirement)
+ALTER TABLE PRD_RAW_DB.PUBLIC.MARKET_DATA SET CHANGE_TRACKING = TRUE;
 
 CREATE TABLE IF NOT EXISTS PRD_ML_DB.OUTPUT.TRADING_SIGNALS (
     ASSET_ID VARCHAR(20),

@@ -200,19 +200,22 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     """
     logger.info(f"Starting technical indicator calculation from {source_table}")
     
-    # Parse target location
+    # Parse target location - strip quotes from all values
     try:
         parts = target_fs_object.split('.')
         if len(parts) == 3:
-            db_name, schema_name, fv_name = parts
+            db_name, schema_name, fv_name = [p.strip('"') for p in parts]
         else:
-            db_name = session.get_current_database()
-            schema_name = session.get_current_schema()
-            fv_name = target_fs_object
+            db_name = session.get_current_database().strip('"')
+            schema_name = session.get_current_schema().strip('"')
+            fv_name = target_fs_object.strip('"')
     except Exception:
-        db_name = session.get_current_database()
-        schema_name = session.get_current_schema()
-        fv_name = target_fs_object
+        db_name = session.get_current_database().strip('"')
+        schema_name = session.get_current_schema().strip('"')
+        fv_name = target_fs_object.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    logger.info(f"Using database={db_name}, schema={schema_name}, warehouse={warehouse}")
     
     # Initialize Feature Store
     # Use CREATE_IF_NOT_EXIST to create Feature Store metadata if not present
@@ -220,7 +223,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
         session=session,
         database=db_name,
         name=schema_name,
-        default_warehouse=session.get_current_warehouse(),
+        default_warehouse=warehouse,
         creation_mode=CreationMode.CREATE_IF_NOT_EXIST
     )
     
@@ -235,31 +238,50 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     logger.info(f"Entity {entity_name} registered.")
     
     # Read raw price data
+    logger.info(f"Reading source table: {source_table}")
     df_raw = session.table(source_table)
     
-    # Calculate technical indicators using Snowpark
-    # Note: In production, you'd use window functions for proper time-series calculations
-    # This is a simplified version for demonstration
+    # Log available columns for debugging
+    logger.info(f"Source table columns: {df_raw.columns}")
     
-    # For this example, we assume the source table already has some preprocessed data
-    # In a real scenario, you would calculate these using window functions:
-    #
-    # df_features = df_raw.with_column(
-    #     "MA_20", 
-    #     F.avg("CLOSE_PRICE").over(Window.partition_by("ASSET_ID").order_by("DATE").rows_between(-19, 0))
-    # )
+    # Build feature DataFrame - only select columns that exist
+    # Use uppercase column names (Snowflake default)
+    available_cols = [c.upper() for c in df_raw.columns]
     
-    # Simplified: assume source has pre-calculated indicators or use SQL UDFs
-    df_features = df_raw.select(
+    # Start with required columns
+    select_cols = [
         F.col("ASSET_ID"),
         F.col("DATE"),
-        F.col("CLOSE_PRICE").alias("CURRENT_PRICE"),
-        F.coalesce(F.col("RSI_14"), F.lit(50.0)).alias("RSI_14"),
-        F.coalesce(F.col("MA_20"), F.col("CLOSE_PRICE")).alias("MA_20"),
-        F.coalesce(F.col("MA_50"), F.col("CLOSE_PRICE")).alias("MA_50"),
-        F.coalesce(F.col("VOLUME"), F.lit(0)).alias("VOLUME"),
-        F.coalesce(F.col("VOLATILITY_20"), F.lit(0.0)).alias("VOLATILITY_20")
-    )
+        F.col("CLOSE_PRICE").alias("CURRENT_PRICE")
+    ]
+    
+    # Add optional columns with defaults if they don't exist
+    if "RSI_14" in available_cols:
+        select_cols.append(F.coalesce(F.col("RSI_14"), F.lit(50.0)).alias("RSI_14"))
+    else:
+        select_cols.append(F.lit(50.0).alias("RSI_14"))
+        
+    if "MA_20" in available_cols:
+        select_cols.append(F.coalesce(F.col("MA_20"), F.col("CLOSE_PRICE")).alias("MA_20"))
+    else:
+        select_cols.append(F.col("CLOSE_PRICE").alias("MA_20"))
+        
+    if "MA_50" in available_cols:
+        select_cols.append(F.coalesce(F.col("MA_50"), F.col("CLOSE_PRICE")).alias("MA_50"))
+    else:
+        select_cols.append(F.col("CLOSE_PRICE").alias("MA_50"))
+        
+    if "VOLUME" in available_cols:
+        select_cols.append(F.coalesce(F.col("VOLUME"), F.lit(0)).alias("VOLUME"))
+    else:
+        select_cols.append(F.lit(0).alias("VOLUME"))
+        
+    if "VOLATILITY_20" in available_cols:
+        select_cols.append(F.coalesce(F.col("VOLATILITY_20"), F.lit(0.0)).alias("VOLATILITY_20"))
+    else:
+        select_cols.append(F.lit(0.0).alias("VOLATILITY_20"))
+    
+    df_features = df_raw.select(*select_cols)
     
     # Create Feature View
     fv = FeatureView(
@@ -274,7 +296,7 @@ def feature_engineering_task(session: Session, source_table: str, target_fs_obje
     fs.register_feature_view(
         feature_view=fv,
         version="v1",
-        if_exists=CreationMode.CREATE_OR_OVERWRITE
+        overwrite=True
     )
     
     return f"Success: Feature View {fv_name} (v1) with technical indicators registered"
@@ -292,7 +314,7 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     
     Args:
         session: Snowpark Session
-        feature_view_path: Path to feature data (for sample input)
+        feature_view_path: Path to feature data (DB.SCHEMA.FV_NAME format)
         model_name: Name for the strategy in registry
         stage_location: Stage for model artifacts
     
@@ -301,8 +323,29 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     """
     logger.info(f"Registering investment strategy as custom model: {model_name}")
     
-    # Load sample data for model signature
-    df_sample = session.table(feature_view_path).limit(10)
+    # Parse feature view path
+    parts = feature_view_path.split('.')
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = [p.strip('"') for p in parts]
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_view_path.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    
+    # Get sample data from Feature Store
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=warehouse,
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    # Get feature view and sample data
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_sample = fv.feature_df.limit(10)
     sample_pdf = df_sample.to_pandas()
     
     # Ensure required columns exist
@@ -320,19 +363,23 @@ def strategy_registration_task(session: Session, feature_view_path: str, model_n
     # Register in Model Registry
     reg = Registry(session=session)
     
+    # Generate timestamp-based version name to avoid conflicts
+    from datetime import datetime
+    version_name = f"v_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    
     # Log the custom model
     mv = reg.log_model(
         model=strategy,
         model_name=model_name,
-        version_name="v1_momentum",
+        version_name=version_name,
         conda_dependencies=["pandas", "numpy"],
-        comment="Momentum-based investment strategy (non-ML custom model)",
+        comment=f"Momentum-based investment strategy at {datetime.utcnow().isoformat()}",
         sample_input_data=sample_pdf[required_cols].head()
     )
     
-    logger.info(f"Strategy {model_name} registered successfully")
+    logger.info(f"Strategy {model_name} version {version_name} registered successfully")
     
-    return f"Success: Strategy {model_name} registered as custom model in registry"
+    return f"Success: Strategy {model_name} version {version_name} registered"
 
 
 def signal_generation_task(session: Session, feature_table: str, model_name: str, output_table: str) -> str:
@@ -344,7 +391,7 @@ def signal_generation_task(session: Session, feature_table: str, model_name: str
     
     Args:
         session: Snowpark Session
-        feature_table: Table with technical indicators
+        feature_table: Path to Feature View (DB.SCHEMA.FV_NAME format)
         model_name: Name of the strategy in registry
         output_table: Output table for trading signals
     
@@ -353,23 +400,49 @@ def signal_generation_task(session: Session, feature_table: str, model_name: str
     """
     logger.info(f"Generating trading signals using strategy {model_name}")
     
+    # Parse feature view path
+    parts = feature_table.split('.')
+    if len(parts) == 3:
+        db_name, schema_name, fv_name = [p.strip('"') for p in parts]
+    else:
+        db_name = session.get_current_database().strip('"')
+        schema_name = "FEATURES"
+        fv_name = feature_table.strip('"')
+    
+    warehouse = session.get_current_warehouse().strip('"')
+    
+    # Get features from Feature Store
+    fs = FeatureStore(
+        session=session,
+        database=db_name,
+        name=schema_name,
+        default_warehouse=warehouse,
+        creation_mode=CreationMode.CREATE_IF_NOT_EXIST
+    )
+    
+    fv = fs.get_feature_view(name=fv_name, version="v1")
+    df_features = fv.feature_df
+    
     # Load strategy from registry
     reg = Registry(session=session)
-    strategy_ref = reg.get_model(model_name).version("v1_momentum")
+    model = reg.get_model(model_name)
     
-    # Load feature data
-    df_features = session.table(feature_table)
+    # Get latest version
+    versions = model.versions()
+    if not versions:
+        raise ValueError(f"No versions found for strategy {model_name}")
+    strategy_ref = versions[0]
+    logger.info(f"Using strategy version: {strategy_ref.version_name}")
     
     # Run the strategy (this calls the predict method of our CustomModel)
     signals_df = strategy_ref.run(df_features, function_name="predict")
     
     # Add metadata
-    from datetime import datetime
     signals_df = signals_df.with_column("SIGNAL_TIMESTAMP", F.current_timestamp())
-    signals_df = signals_df.with_column("STRATEGY_VERSION", F.lit("v1_momentum"))
+    signals_df = signals_df.with_column("STRATEGY_VERSION", F.lit(strategy_ref.version_name))
     
     # Save signals
-    signals_df.write.mode("append").save_as_table(output_table)
+    signals_df.write.mode("overwrite").save_as_table(output_table)
     
     # Log summary
     signal_counts = signals_df.group_by("SIGNAL").count().collect()
@@ -454,14 +527,23 @@ def main(session: Session) -> str:
     Default main function - runs the full pipeline sequentially.
     Useful for ML Jobs mode where a single job runs everything.
     """
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    # Get database - handle None case
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
-    # Configuration (derived from current context)
-    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
+    env_prefix = db.split("_")[0]
+    
+    # Configuration
+    # Source table is in RAW_DB, features are in ML_DB
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
-    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    output_table = f"{db}.OUTPUT.TRADING_SIGNALS"
     
     # Run full pipeline
     result1 = feature_engineering_task(session, source_table, feature_view)
@@ -478,21 +560,39 @@ def main(session: Session) -> str:
 
 def feature_engineering_main(session: Session) -> str:
     """Entry point for Technical Indicators stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    # Get database - handle None case by querying session
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        # Fallback: query the database from session
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
-    source_table = f"{db}.{schema}.RAW_MARKET_DATA"
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    logger.info(f"Running feature_engineering_main with database: {db}")
+    
+    # Derive environment prefix from database name (e.g., DEV_ML_DB -> DEV)
+    env_prefix = db.split("_")[0]
+    
+    # Source table is in RAW_DB, features are in ML_DB.FEATURES
+    source_table = f"{env_prefix}_RAW_DB.PUBLIC.MARKET_DATA"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
+    
+    logger.info(f"Source: {source_table}, Feature View: {feature_view}")
     
     return feature_engineering_task(session, source_table, feature_view)
 
 
 def strategy_registration_main(session: Session) -> str:
     """Entry point for Strategy Registration stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
     
     return strategy_registration_task(session, feature_view, strategy_name, "")
@@ -500,12 +600,16 @@ def strategy_registration_main(session: Session) -> str:
 
 def signal_generation_main(session: Session) -> str:
     """Entry point for Signal Generation stored procedure."""
-    db = session.get_current_database()
-    schema = session.get_current_schema()
+    db_raw = session.get_current_database()
+    if db_raw is None:
+        result = session.sql("SELECT CURRENT_DATABASE()").collect()
+        db = result[0][0] if result else "DEV_ML_DB"
+    else:
+        db = db_raw.strip('"')
     
-    feature_view = f"{db}.{schema}.ASSET_FEATURES"
+    feature_view = f"{db}.FEATURES.ASSET_FEATURES"
     strategy_name = "MOMENTUM_STRATEGY"
-    output_table = f"{db}.{schema}.TRADING_SIGNALS"
+    output_table = f"{db}.OUTPUT.TRADING_SIGNALS"
     
     return signal_generation_task(session, feature_view, strategy_name, output_table)
 
