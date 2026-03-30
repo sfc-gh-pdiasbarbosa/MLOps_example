@@ -177,7 +177,10 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
     ]
     
     # Common imports for all tasks
-    imports = [ml_logic_path]
+    # Note: do NOT include ml_logic_path here -- it is the procedure source file
+    # and is automatically staged by register_from_file. Adding it to imports
+    # causes duplicate uploads and stage reference conflicts.
+    imports = []
     
     # Register stored procedures if using sprocs mode
     if execution_mode == "sprocs":
@@ -207,8 +210,7 @@ def deploy(env_name: str, execution_mode: str = "sprocs"):
                 stage_location=code_stage,
                 packages=task["packages"],
                 replace=True,
-                execute_as="caller",
-                imports=imports
+                execute_as="caller"
             )
             print(f"  ✅ Registered: SP_{task['name']}")
     
