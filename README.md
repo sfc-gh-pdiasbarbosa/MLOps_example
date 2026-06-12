@@ -44,24 +44,30 @@ A comprehensive, hands-on demonstration of Snowflake's complete ML platform capa
 │   │   ├── config/environments.yml         # DEV/SIT/UAT/PRD config
 │   │   └── README.md
 │   └── quant-investment-strategy/          # Non-ML CustomModel example
-│       ├── src/strategy_logic.py
-│       ├── scripts/deploy_pipeline.py
+│       ├── src/strategy_logic.py           # Momentum strategy (RSI + MA signals)
+│       ├── scripts/deploy_pipeline.py      # DAG deployment script
+│       ├── config/environments.yml         # DEV/SIT/UAT/PRD config
 │       └── README.md
 │
 ├── sql/                                    # Infrastructure setup scripts
-│   ├── 00_setup_warehouses.sql
-│   ├── 01_setup_dev_environment.sql
-│   ├── 02_setup_sit_environment.sql
-│   ├── 02b_setup_uat_environment.sql
-│   ├── 03_setup_prd_environment.sql
-│   ├── 04_setup_roles_and_grants.sql
+│   ├── README.md                           # SQL scripts reference guide
+│   ├── 00_setup_warehouses.sql             # DEV/SIT/UAT/PRD warehouses
+│   ├── 01_setup_dev_environment.sql        # DEV databases, schemas, sample data
+│   ├── 02_setup_sit_environment.sql        # SIT databases, schemas, sample data
+│   ├── 02b_setup_uat_environment.sql       # UAT databases, schemas, validation metrics
+│   ├── 03_setup_prd_environment.sql        # PRD databases, schemas, history tables
+│   ├── 04_setup_roles_and_grants.sql       # ML roles and permissions
+│   ├── 05_setup_market_data_tables.sql     # Market data and trading signals tables
+│   ├── 06_setup_network_policy.sql         # GitHub Actions network policy for CI/CD
 │   ├── 07_setup_monitoring.sql             # Monitoring schemas and grants
-│   └── 08_setup_compute_pool.sql           # CPU/GPU compute pools
+│   ├── 08_setup_compute_pool.sql           # CPU/GPU compute pools
+│   └── 99_setup_all_environments.sql       # All-in-one setup script
 │
 ├── docs/
 │   ├── DEMO_GUIDE.md                       # Step-by-step demo delivery guide
 │   ├── SNOWFLAKE_ML_FEATURE_MAP.md         # Complete feature mapping reference
-│   └── ML_VS_CUSTOM_MODELS.md              # ML vs CustomModel comparison
+│   ├── ML_VS_CUSTOM_MODELS.md              # ML vs CustomModel comparison
+│   └── BRANCH_PROTECTION.md               # Branch protection and CI/CD rules
 │
 ├── .github/workflows/                      # CI/CD pipelines
 │   ├── ml_churn_deploy.yml
@@ -81,14 +87,25 @@ A comprehensive, hands-on demonstration of Snowflake's complete ML platform capa
 
 ### Step 1: Run SQL Setup Scripts
 
-Execute these scripts in SnowSight SQL Worksheets in order:
+**Option A — All-in-one (recommended):** run a single script that executes everything in the correct order:
 
 ```
-sql/00_setup_warehouses.sql          -- Creates warehouses (XS through L)
-sql/01_setup_dev_environment.sql     -- DEV databases and schemas
+sql/99_setup_all_environments.sql    -- Creates all warehouses, databases, roles, monitoring, and compute pools
+```
+
+**Option B — Run individually** in SnowSight SQL Worksheets in this order:
+
+```
+sql/00_setup_warehouses.sql          -- Creates warehouses (XS through L for all envs)
+sql/01_setup_dev_environment.sql     -- DEV databases, schemas, and sample data (1K rows)
+sql/02_setup_sit_environment.sql     -- SIT databases, schemas, and sample data (5K rows)
+sql/02b_setup_uat_environment.sql    -- UAT databases, schemas, and validation metrics (10K rows)
+sql/03_setup_prd_environment.sql     -- PRD databases, schemas, and history tables
 sql/04_setup_roles_and_grants.sql    -- ML roles and permissions
+sql/05_setup_market_data_tables.sql  -- Market data and trading signals (required for quant example)
+sql/06_setup_network_policy.sql      -- GitHub Actions network policy (required for CI/CD)
 sql/07_setup_monitoring.sql          -- Monitoring schemas + lineage grants
-sql/08_setup_compute_pool.sql        -- CPU/GPU compute pools
+sql/08_setup_compute_pool.sql        -- CPU/GPU/serving compute pools
 ```
 
 ### Step 2: Create Demo Database
@@ -160,6 +177,8 @@ Feature Engineering >> Model Training >> Batch Inference >> Monitor Setup
 For step-by-step demo instructions (including talking points and SnowSight navigation), see **[docs/DEMO_GUIDE.md](./docs/DEMO_GUIDE.md)**.
 
 For the complete MLOps-to-Snowflake feature mapping, see **[docs/SNOWFLAKE_ML_FEATURE_MAP.md](./docs/SNOWFLAKE_ML_FEATURE_MAP.md)**.
+
+For branch protection rules and CI/CD promotion workflow details, see **[docs/BRANCH_PROTECTION.md](./docs/BRANCH_PROTECTION.md)**.
 
 ## Resources
 
